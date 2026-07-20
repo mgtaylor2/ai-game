@@ -4,13 +4,10 @@ import { startGameLoop } from './game/loop';
 import { Kart } from './kart/kart';
 import { InputController } from './kart/input';
 import { Track } from './track/track';
-import { createRingWaypoints, createWaypointDebugGroup } from './track/waypoints';
+import { createWaypointDebugGroup } from './track/waypoints';
+import { ringTrack } from './tracks/ring';
 import { Race, TOTAL_LAPS } from './race/race';
 import { ScreenManager, type Screen } from './ui/screens';
-
-const START_X = 30;
-const START_Z = 14;
-const START_HEADING = Math.PI; // right straight, just past the finish line, facing -Z
 
 const COUNTDOWN_SECONDS = 3;
 const GO_TEXT_SECONDS = 0.7;
@@ -35,16 +32,16 @@ function bootstrap(): void {
 
   const gameScene = createScene(canvas);
 
-  const track = new Track();
+  const track = new Track(ringTrack);
   gameScene.scene.add(track.group);
 
-  const waypoints = createRingWaypoints();
+  const waypoints = track.definition.waypoints;
   const waypointDebugGroup = createWaypointDebugGroup(waypoints);
   waypointDebugGroup.visible = false;
   gameScene.scene.add(waypointDebugGroup);
 
   const kart = new Kart();
-  kart.reset(START_X, START_Z, START_HEADING);
+  kart.reset(track.definition.start.x, track.definition.start.z, track.definition.start.heading);
   gameScene.scene.add(kart.mesh);
 
   const input = new InputController();
@@ -64,7 +61,8 @@ function bootstrap(): void {
   };
 
   const resetRaceState = (): void => {
-    kart.reset(START_X, START_Z, START_HEADING);
+    const { start } = track.definition;
+    kart.reset(start.x, start.z, start.heading);
     race.reset();
   };
 
@@ -79,12 +77,18 @@ function bootstrap(): void {
   let countdownRemaining = 0;
   let goTextRemaining = 0;
 
-  screens.onStart(() => {
+  const startCountdown = (): void => {
     resetRaceState();
     countdownRemaining = COUNTDOWN_SECONDS;
     goTextRemaining = 0;
     screens.setCountdownText(`${COUNTDOWN_SECONDS}`);
     setScreen('countdown');
+  };
+
+  screens.onStart(startCountdown);
+  screens.onRestart(startCountdown);
+  screens.onResume(() => {
+    setScreen('racing');
   });
 
   window.addEventListener('keydown', (event) => {
@@ -93,7 +97,13 @@ function bootstrap(): void {
       debugEl?.classList.toggle('hidden');
     }
     const current = screens.getCurrent();
-    if (event.key === 'Escape' && (current === 'racing' || current === 'countdown')) {
+    if (event.key === 'Escape' && current === 'racing') {
+      // The loop continues to render but does not update physics/race state on
+      // the paused screen, so the race is completely frozen.
+      setScreen('paused');
+    } else if (event.key === 'Escape' && current === 'paused') {
+      setScreen('racing');
+    } else if (event.key === 'Escape' && current === 'countdown') {
       countdownRemaining = 0;
       goTextRemaining = 0;
       resetRaceState();

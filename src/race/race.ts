@@ -1,4 +1,5 @@
 import type { Kart } from '../kart/kart';
+import * as THREE from 'three';
 import type { Track } from '../track/track';
 import type { Waypoint } from '../track/waypoints';
 
@@ -13,7 +14,7 @@ const LAP_WAYPOINT_FRACTION = 0.75;
 interface KartRaceState {
   laps: number;
   cooldown: number;
-  prevZ: number;
+  prevPosition: THREE.Vector3;
   nextWaypointIndex: number;
   /** Monotonic count of waypoints passed; never decremented. */
   totalWaypointsPassed: number;
@@ -41,7 +42,7 @@ export class Race {
     this.states.set(kart, {
       laps: 0,
       cooldown: 0,
-      prevZ: kart.position.z,
+      prevPosition: kart.position.clone(),
       nextWaypointIndex: 0,
       totalWaypointsPassed: 0,
       waypointsSinceLastLap: 0,
@@ -57,18 +58,18 @@ export class Race {
       if (
         state.cooldown === 0 &&
         Math.abs(kart.speed) > MIN_CROSSING_SPEED &&
-        // Only count crossings in the racing direction (-Z)...
-        kart.position.z < state.prevZ &&
+        // Only count crossings in the racing direction defined by the track...
+        this.isMovingInFinishDirection(kart.position, state.prevPosition) &&
         // ...after covering most of the waypoint loop since the last counted lap.
         state.waypointsSinceLastLap >= LAP_WAYPOINT_FRACTION * this.waypoints.length &&
-        this.track.crossesFinishLine(kart.position.x, state.prevZ, kart.position.z)
+        this.track.crossesFinishLine(state.prevPosition, kart.position)
       ) {
         state.laps += 1;
         state.cooldown = FINISH_LINE_COOLDOWN_SECONDS;
         state.waypointsSinceLastLap = 0;
         this.onLap?.(kart, state.laps);
       }
-      state.prevZ = kart.position.z;
+      state.prevPosition.copy(kart.position);
     }
   }
 
@@ -91,6 +92,12 @@ export class Race {
 
   private distanceTo(kart: Kart, waypoint: Waypoint): number {
     return Math.hypot(kart.position.x - waypoint.x, kart.position.z - waypoint.z);
+  }
+
+  private isMovingInFinishDirection(current: THREE.Vector3, previous: THREE.Vector3): boolean {
+    const { axis, direction } = this.track.definition.finishLine;
+    const delta = axis === 'z' ? current.z - previous.z : current.x - previous.x;
+    return delta * direction > 0;
   }
 
   /**
@@ -121,7 +128,7 @@ export class Race {
     for (const [kart, state] of this.states) {
       state.laps = 0;
       state.cooldown = 0;
-      state.prevZ = kart.position.z;
+      state.prevPosition.copy(kart.position);
       state.nextWaypointIndex = 0;
       state.totalWaypointsPassed = 0;
       state.waypointsSinceLastLap = 0;

@@ -10,8 +10,11 @@ export class ScreenManager {
   private current: Screen = 'menu';
   private readonly menuEl: HTMLDivElement;
   private readonly countdownEl: HTMLDivElement;
+  private readonly pauseEl: HTMLDivElement;
   private lastCountdownText = '';
   private readonly startCallbacks: Array<() => void> = [];
+  private readonly resumeCallbacks: Array<() => void> = [];
+  private readonly restartCallbacks: Array<() => void> = [];
 
   constructor(root: HTMLElement) {
     this.menuEl = document.createElement('div');
@@ -29,9 +32,27 @@ export class ScreenManager {
     this.countdownEl.className = 'hidden';
     root.appendChild(this.countdownEl);
 
+    this.pauseEl = document.createElement('div');
+    this.pauseEl.id = 'pause-screen';
+    this.pauseEl.className = 'screen-overlay hidden';
+    this.pauseEl.innerHTML = `
+      <h1 class="screen-title screen-title--pause">PAUSED</h1>
+      <div class="screen-actions">
+        <button id="resume-race-button" class="screen-button" type="button">Resume</button>
+        <button id="restart-race-button" class="screen-button" type="button">Restart</button>
+      </div>
+    `;
+    root.appendChild(this.pauseEl);
+
     const startButton = this.menuEl.querySelector<HTMLButtonElement>('#start-race-button');
     startButton?.addEventListener('click', () => {
       for (const cb of this.startCallbacks) cb();
+    });
+    this.pauseEl.querySelector<HTMLButtonElement>('#resume-race-button')?.addEventListener('click', () => {
+      for (const cb of this.resumeCallbacks) cb();
+    });
+    this.pauseEl.querySelector<HTMLButtonElement>('#restart-race-button')?.addEventListener('click', () => {
+      for (const cb of this.restartCallbacks) cb();
     });
 
     this.show('menu');
@@ -40,6 +61,16 @@ export class ScreenManager {
   /** Register a callback fired when the "Start Race" button is clicked. */
   onStart(cb: () => void): void {
     this.startCallbacks.push(cb);
+  }
+
+  /** Register a callback fired when the "Resume" button is clicked. */
+  onResume(cb: () => void): void {
+    this.resumeCallbacks.push(cb);
+  }
+
+  /** Register a callback fired when the "Restart" button is clicked. */
+  onRestart(cb: () => void): void {
+    this.restartCallbacks.push(cb);
   }
 
   /** Update the big countdown text ("3", "2", "1", "GO!"); no-op if unchanged. */
@@ -56,8 +87,8 @@ export class ScreenManager {
 
   show(screen: Screen): void {
     this.current = screen;
-    // Paused/results overlays will be added here in later tasks.
     this.menuEl.classList.toggle('hidden', screen !== 'menu');
+    this.pauseEl.classList.toggle('hidden', screen !== 'paused');
     if (screen === 'countdown') {
       this.countdownEl.classList.remove('hidden');
     } else if (screen !== 'racing') {

@@ -59,6 +59,10 @@ flowchart TD
 
 Solid arrows are hard dependencies; dotted arrows mean "much easier after". Everything in **Menus & HUD** and **Game feel** can start immediately with no dependencies (except T7 after T6).
 
+## Completed
+
+- [x] **T8 — Pause menu + restart** — Esc pauses a live race with Resume / Restart controls; restart resets the kart and race state before a fresh countdown.
+
 ## Ready now (no unmet dependencies)
 
 ### T1 — Extract race module ~S
@@ -77,10 +81,6 @@ HTML/CSS overlay (same pattern as the HUD in `index.html`/`src/style.css`): titl
 A `KartConfig` (body color, plus stat presets: e.g. Speedy / Balanced / Heavy modifying `MAX_SPEED`/`ACCELERATION`/`TURN_RATE_MAX` multipliers). Menu gains a kart picker (3–4 presets). Constants stay in `src/kart/controller.ts`; the config supplies multipliers.
 **Done when:** picking a different kart visibly changes color and feel.
 
-### T8 — Pause menu + restart ~S
-Esc during a race pauses (loop stops advancing physics but keeps rendering, or freezes entirely), overlay offers Resume / Restart. Restart resets kart position, speed, laps.
-**Done when:** pause fully freezes gameplay; restart gives a clean race state without a page reload.
-
 ### T9 — HUD upgrade ~S
 Speedometer (from `kart.speed`), "Lap X/3" format, and a 3-2-1-GO countdown at race start during which input is ignored.
 **Done when:** countdown gates the race start; HUD shows live speed and lap out of total.
@@ -97,15 +97,17 @@ WebAudio-only (no audio files): engine hum pitched by speed, wall-bump thunk, la
 Procedural `CanvasTexture` road (edge stripes / checkered finish line), wheels that spin with speed and steer with input, simple shadow blob under the kart.
 **Done when:** motion reads clearly on screen; still zero external asset files.
 
-### T13 — Data-driven track format ~M
+### [x] T13 — Data-driven track format ~M
 Refactor `src/track/track.ts` so geometry/walls/finish line/waypoints are built from a plain-data `TrackDefinition` object (start with the current ring as `tracks/ring.ts`). Collision can stay rectangle-based for now but should live behind the definition, not hardcoded in the class.
 **Done when:** current track is defined purely as data; adding a hypothetical second definition requires no changes to track-building code.
 
 ## Blocked (waiting on dependencies)
 
-### T3 — AI driver ~M *(needs T2)*
+### [x] T3 — AI driver ~M *(needs T2)*
 `src/ai/driver.ts`: produces an `InputState` (steer toward next waypoint, throttle with simple corner slowdown). Reuses `updateKart` from `src/kart/controller.ts` unchanged — AI karts are just karts with a different input source (this was designed for; see `HANDOFF.md`).
 **Done when:** one AI kart completes laps unassisted without getting permanently stuck.
+
+**Completed:** `src/ai/driver.ts` translates Race's next waypoint into the standard `InputState`; T4 will wire AI karts into the multi-kart loop.
 
 ### T4 — Multi-kart race manager + placement ~M *(needs T3)*
 3–4 AI karts + player, staggered starting grid, live placement ("3rd/4th") from lap + waypoint progress, standings in HUD. Kart-vs-kart collision can be simple radius push-apart (or deferred — note it in the PR either way).

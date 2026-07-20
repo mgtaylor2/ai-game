@@ -126,3 +126,13 @@ body {
   background: rgba(255, 255, 255, 0.2);
   transform: scale(1.05);
 }
+
+.screen-title--pause {
+  font-size: 56px;
+}
+
+.screen-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
