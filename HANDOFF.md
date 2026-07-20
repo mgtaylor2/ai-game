@@ -43,7 +43,9 @@ npm run preview  # serve the production build locally
 
 ## Next up
 
-Milestone 2 from `ROADMAP.md`: AI-controlled opponents + lap-based race with placement/finish. Natural entry points:
+**See `NEXT-STEPS.md` for the full task board** — bite-size tasks with a dependency graph, sized for one agent session each. Claim a task there, note it here while you work on it. No task is currently claimed.
+
+The near-term arc is Milestone 2 from `ROADMAP.md` (AI opponents + placement), broken down as T1→T5 on the board. Natural entry points:
 - Add an `ai/` module that reuses `kart/controller.ts`'s `updateKart` with a synthetic `InputState` derived from track waypoints, rather than keyboard input.
 - `Kart` and `updateKart` are already input-source-agnostic (just take an `InputState`), so this shouldn't require changing `kart.ts`/`controller.ts` — just producing `InputState` from an AI policy instead of `InputController`.
 - Lap tracking currently lives inline in `game/loop.ts` for a single kart; multi-kart racing will need per-kart lap/position state, likely worth extracting into its own `race/` module before bolting AI on.

@@ -15,4 +15,4 @@ Then open the printed `localhost` URL. Controls: WASD or arrow keys (accelerate 
 
 ## Project status and roadmap
 
-See [`ROADMAP.md`](./ROADMAP.md) for the staged milestone plan, and [`HANDOFF.md`](./HANDOFF.md) for current state, conventions, and known gotchas — kept up to date as a shared note between Codex and Claude sessions.
+See [`ROADMAP.md`](./ROADMAP.md) for the staged milestone plan, [`NEXT-STEPS.md`](./NEXT-STEPS.md) for the agent task board (bite-size tasks + dependency graph), and [`HANDOFF.md`](./HANDOFF.md) for current state, conventions, and known gotchas — kept up to date as a shared note between Codex and Claude sessions.
