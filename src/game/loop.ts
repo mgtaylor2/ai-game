@@ -58,7 +58,11 @@ export function startGameLoop(
     switch (getScreen()) {
       case 'racing':
         updateKart(kart, input.getState(), track, dt);
-        for (const cpu of cpuRacers) updateKart(cpu.kart, cpu.driver.getInput(cpu.kart), track, dt);
+        kart.animateWheels(dt);
+        for (const cpu of cpuRacers) {
+          updateKart(cpu.kart, cpu.driver.getInput(cpu.kart), track, dt);
+          cpu.kart.animateWheels(dt);
+        }
         updateChaseCamera();
         race.update(dt);
         break;

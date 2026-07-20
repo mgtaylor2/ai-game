@@ -7,6 +7,7 @@ const WALL_HEIGHT = 2;
 export class Track {
   readonly group = new THREE.Group();
   readonly definition: TrackDefinition;
+  private readonly themedMaterials: THREE.MeshStandardMaterial[] = [];
 
   constructor(definition: TrackDefinition) {
     this.definition = definition;
@@ -18,33 +19,44 @@ export class Track {
   private buildGround(): void {
     const { grass: grassDefinition, road: roadDefinition, islands } = this.definition;
     const grassGeometry = new THREE.PlaneGeometry(grassDefinition.width, grassDefinition.depth);
-    const grassMaterial = new THREE.MeshStandardMaterial({ color: grassDefinition.color });
+    const grassMaterial = new THREE.MeshStandardMaterial({ color: grassDefinition.color, map: this.createGrassTexture() });
     const grass = new THREE.Mesh(grassGeometry, grassMaterial);
     grass.rotation.x = -Math.PI / 2;
     grass.position.set(grassDefinition.x, 0, grassDefinition.z);
+    grass.receiveShadow = true;
     this.group.add(grass);
+    this.themedMaterials.push(grassMaterial);
 
     const roadGeometry = new THREE.PlaneGeometry(roadDefinition.width, roadDefinition.depth);
-    const roadMaterial = new THREE.MeshStandardMaterial({ color: roadDefinition.color });
+    const roadMaterial = new THREE.MeshStandardMaterial({ color: roadDefinition.color, map: this.createRoadTexture() });
     const road = new THREE.Mesh(roadGeometry, roadMaterial);
     road.rotation.x = -Math.PI / 2;
     road.position.set(roadDefinition.x, 0.01, roadDefinition.z);
+    road.receiveShadow = true;
     this.group.add(road);
+    this.themedMaterials.push(roadMaterial);
 
     for (const islandDef of islands) {
       const islandGeometry = new THREE.BoxGeometry(islandDef.width, islandDef.height, islandDef.depth);
-      const island = new THREE.Mesh(islandGeometry, new THREE.MeshStandardMaterial({ color: islandDef.color }));
+      const islandMaterial = new THREE.MeshStandardMaterial({ color: islandDef.color, roughness: 0.95 });
+      const island = new THREE.Mesh(islandGeometry, islandMaterial);
       island.position.set(islandDef.x, islandDef.height / 2, islandDef.z);
+      island.castShadow = true;
+      island.receiveShadow = true;
       this.group.add(island);
+      this.themedMaterials.push(islandMaterial);
     }
   }
 
   private buildWalls(): void {
     for (const wallDef of this.definition.walls) {
-      const material = new THREE.MeshStandardMaterial({ color: wallDef.color });
+      const material = new THREE.MeshStandardMaterial({ color: wallDef.color, roughness: 0.72 });
       const wall = new THREE.Mesh(new THREE.BoxGeometry(wallDef.width, WALL_HEIGHT, wallDef.depth), material);
       wall.position.set(wallDef.x, WALL_HEIGHT / 2, wallDef.z);
+      wall.castShadow = true;
+      wall.receiveShadow = true;
       this.group.add(wall);
+      this.themedMaterials.push(material);
     }
   }
 
@@ -52,20 +64,68 @@ export class Track {
     const { axis, coordinate, min, max } = this.definition.finishLine;
     const width = max - min;
     const geometry = new THREE.PlaneGeometry(axis === 'z' ? width : 1, axis === 'x' ? width : 1);
-    const material = new THREE.MeshStandardMaterial({ color: 0xffffff });
+    const material = new THREE.MeshStandardMaterial({ map: this.createFinishTexture(axis === 'z' ? width : 1, axis === 'x' ? width : 1) });
     const line = new THREE.Mesh(geometry, material);
     line.rotation.x = -Math.PI / 2;
     line.position.set(axis === 'z' ? (min + max) / 2 : coordinate, 0.02, axis === 'z' ? coordinate : (min + max) / 2);
+    line.receiveShadow = true;
     this.group.add(line);
   }
 
   /** Recolours the shared course for a selected cup track theme. */
   setTheme(grassColor: number, roadColor: number, wallColor: number): void {
-    const meshes = this.group.children.filter((child): child is THREE.Mesh => child instanceof THREE.Mesh);
-    const colors = [grassColor, roadColor, grassColor, wallColor, wallColor, wallColor, wallColor];
-    meshes.forEach((mesh, index) => {
-      if (mesh.material instanceof THREE.MeshStandardMaterial && colors[index] !== undefined) mesh.material.color.setHex(colors[index]);
-    });
+    this.themedMaterials[0]?.color.setHex(grassColor);
+    this.themedMaterials[1]?.color.setHex(roadColor);
+    this.themedMaterials.slice(2).forEach((material, index) => material.color.setHex(index === 0 ? grassColor : wallColor));
+  }
+
+  private createGrassTexture(): THREE.CanvasTexture {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 128;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Canvas 2D context is unavailable');
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, 128, 128);
+    context.globalAlpha = 0.12;
+    context.fillStyle = '#477b45';
+    for (let x = 0; x < 128; x += 16) context.fillRect(x, 0, 8, 128);
+    return this.repeatTexture(canvas, 9, 7);
+  }
+
+  private createRoadTexture(): THREE.CanvasTexture {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 128;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Canvas 2D context is unavailable');
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, 128, 128);
+    context.fillStyle = 'rgba(35, 35, 45, 0.16)';
+    for (let y = 0; y < 128; y += 16) context.fillRect(0, y, 128, 2);
+    context.fillStyle = 'rgba(255, 255, 255, 0.14)';
+    for (let x = 8; x < 128; x += 32) context.fillRect(x, 62, 16, 4);
+    return this.repeatTexture(canvas, 6, 4);
+  }
+
+  private createFinishTexture(width: number, depth: number): THREE.CanvasTexture {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 128;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Canvas 2D context is unavailable');
+    const cell = 16;
+    for (let y = 0; y < 128; y += cell) for (let x = 0; x < 128; x += cell) {
+      context.fillStyle = (x / cell + y / cell) % 2 === 0 ? '#f8fafc' : '#1b263b';
+      context.fillRect(x, y, cell, cell);
+    }
+    return this.repeatTexture(canvas, Math.max(1, width / 4), Math.max(1, depth / 2));
+  }
+
+  private repeatTexture(canvas: HTMLCanvasElement, repeatX: number, repeatY: number): THREE.CanvasTexture {
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(repeatX, repeatY);
+    return texture;
   }
 
   /**

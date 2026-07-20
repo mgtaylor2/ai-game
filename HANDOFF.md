@@ -6,11 +6,15 @@ Shared "pick up here" note between Claude and Codex working in this repo. Whoeve
 
 - By: Codex
 - When: 2026-07-20
-- What: Completed T3 (waypoint-following AI driver), T8 (pause/restart), and T13 (data-driven rectangular-ring track).
+- What: Merged the Milestone 2 race-flow implementation and reconciled this handoff with the current branch.
 
 ## Current state
 
-Milestone 1 is complete. T1/T2 extracted multi-kart-ready race state and ring waypoint progress; T3 adds an AI policy that produces standard kart input from the next waypoint. T6/T9 add a start menu, race countdown, speedometer, and lap HUD. T8 adds Escape pause with Resume / Restart controls; restarting resets the kart and race state before a new countdown. T13 moves the ring's geometry, collision, finish line, waypoints, and starting position into `src/tracks/ring.ts`. The game still wires only the player kart into the loop; T4 is responsible for spawning and simulating the AI field, placement, and standings. No items or additional selectable tracks yet.
+Milestone 1 is complete. T1/T2 extracted multi-kart-ready race state and ring waypoint progress; T3 adds an AI policy that produces standard kart input from the next waypoint. T6/T9 add a start menu, race countdown, speedometer, and lap HUD. T8 adds Escape pause with Resume and quit-to-menu controls. T13 moves the ring's geometry, collision, finish line, waypoints, and starting position into `src/tracks/ring.ts`.
+
+The current branch also contains the Milestone 2 race-flow work: the loop now simulates the player plus three AI karts, and the player reaching three laps opens a results screen with Race Again and Back to Menu actions. This is **not yet a complete T4/T5 implementation**: there is no live placement/standings UI, no kart-to-kart collision, and the results copy is hard-coded to "1st place" rather than calculated from finish order. The track-selection flow currently changes the ring track's palette only; it does not select distinct track definitions. No items or additional playable tracks exist yet.
+
+The current visual pass deliberately targets an original, bright arcade-kart-racer look rather than copying Nintendo-owned characters, tracks, UI, or assets. It adds procedural grass/asphalt/checker textures, soft shadows, filmic colour treatment, distance fog, rounded kart bodywork, and speed-driven wheel animation. Keep future art and audio original or appropriately licensed.
 
 ## How to run
 
@@ -51,8 +55,8 @@ npm run preview  # serve the production build locally
 
 **T13 is complete.** `Track` now accepts a `TrackDefinition`; the current ring's geometry, collision bounds, finish line, waypoints, and player start position all live in `src/tracks/ring.ts`. A future track only needs another definition object, plus menu selection work in T14.
 
-**T8 is complete.** Escape pauses a race with Resume / Restart controls; restart resets kart and race state and begins a fresh countdown.
+**T8 is complete.** Escape pauses a race with Resume and Quit to Menu controls; Race Again from the results screen resets the race and begins a fresh countdown.
 
-The core critical path resumes at **T4 — Multi-kart race manager + placement**: add 3–4 AI `Kart`s, register each with `Race`, call `updateKart(aiKart, aiDriver.getInput(aiKart), track, dt)`, and compute standings from laps plus `Race#getProgress`. After that, T5 owns results flow.
+The core critical path resumes with the remaining parts of **T4/T5**: calculate and display live placement/standings from laps plus `Race#getProgress`, record finish order, and use that order in the results screen. Kart-to-kart collision remains deferred. After those are complete, T14 can add genuinely distinct track definitions to the existing selection flow.
 
 See `NEXT-STEPS.md` for the task board. Keep one task per branch/PR and update both documents on completion.

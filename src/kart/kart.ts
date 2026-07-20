@@ -6,6 +6,7 @@ export class Kart {
   readonly mesh: THREE.Group;
   readonly position = new THREE.Vector3(0, 0, 0);
   private readonly riderMaterials: THREE.MeshStandardMaterial[] = [];
+  private readonly wheels: THREE.Mesh[] = [];
   heading = 0; // radians; 0 = facing +Z
   speed = 0; // units/sec; positive = forward, negative = reverse
 
@@ -42,19 +43,22 @@ export class Kart {
     const group = new THREE.Group();
 
     const body = new THREE.Mesh(
-      new THREE.BoxGeometry(1.6, 0.6, 2.6),
-      new THREE.MeshStandardMaterial({ color: 0xe63946 }),
+      new THREE.CapsuleGeometry(0.78, 1.4, 6, 16),
+      new THREE.MeshStandardMaterial({ color: 0xe63946, roughness: 0.38, metalness: 0.08 }),
     );
-    body.position.y = 0.6;
+    body.rotation.z = Math.PI / 2;
+    body.position.y = 0.62;
+    body.castShadow = true;
     group.add(body);
 
     const nose = new THREE.Mesh(
       new THREE.ConeGeometry(0.5, 1, 4),
-      new THREE.MeshStandardMaterial({ color: 0xffb703 }),
+      new THREE.MeshStandardMaterial({ color: 0xffb703, roughness: 0.32, metalness: 0.08 }),
     );
     nose.rotation.x = Math.PI / 2;
     nose.rotation.y = Math.PI / 4;
     nose.position.set(0, 0.6, 1.6);
+    nose.castShadow = true;
     group.add(nose);
 
     const wheelGeometry = new THREE.CylinderGeometry(0.35, 0.35, 0.4, 12);
@@ -69,6 +73,9 @@ export class Kart {
       const wheel = new THREE.Mesh(wheelGeometry, wheelMaterial);
       wheel.rotation.z = Math.PI / 2;
       wheel.position.set(x, 0.35, z);
+      wheel.castShadow = true;
+      wheel.receiveShadow = true;
+      this.wheels.push(wheel);
       group.add(wheel);
     }
 
@@ -91,6 +98,12 @@ export class Kart {
     group.add(visor);
 
     return group;
+  }
+
+  /** Spins the wheels from physical speed for a clearer, more animated silhouette. */
+  animateWheels(dt: number): void {
+    const rotation = (this.speed / 0.35) * dt;
+    for (const wheel of this.wheels) wheel.rotation.x += rotation;
   }
 
   syncMesh(): void {
