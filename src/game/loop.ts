@@ -21,7 +21,7 @@ export function startGameLoop(
   input: InputController,
   race: Race,
   getScreen: () => Screen,
-  onFrame?: () => void,
+  onFrame?: (dt: number) => void,
 ): GameLoopHandles {
   const { scene, camera, renderer } = gameScene;
 
@@ -55,7 +55,10 @@ export function startGameLoop(
         race.update(dt);
         break;
       case 'countdown':
-        // Later: tick countdown timer, hold kart still, chase camera settles.
+        // Kart frozen, input ignored; camera settles into chase position so
+        // the view is already correct when racing begins. Countdown timing
+        // itself is owned by main.ts via onFrame(dt).
+        updateChaseCamera();
         break;
       case 'paused':
         // Later: frozen simulation, pause overlay handles its own input.
@@ -68,7 +71,7 @@ export function startGameLoop(
         break;
     }
 
-    onFrame?.();
+    onFrame?.(dt);
     renderer.render(scene, camera);
     requestAnimationFrame(tick);
   }

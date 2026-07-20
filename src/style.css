@@ -56,6 +56,33 @@ body {
   display: none;
 }
 
+#speedometer {
+  margin-top: 4px;
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.85);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Huge centered countdown number; no backdrop so the game stays visible. */
+#countdown-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 160px;
+  font-weight: 900;
+  letter-spacing: 6px;
+  text-shadow: 0 6px 32px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+  z-index: 9;
+}
+
+#countdown-overlay.hidden {
+  display: none;
+}
+
 .screen-overlay {
   position: absolute;
   inset: 0;

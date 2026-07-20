@@ -9,6 +9,8 @@ export type Screen = 'menu' | 'countdown' | 'racing' | 'paused' | 'results';
 export class ScreenManager {
   private current: Screen = 'menu';
   private readonly menuEl: HTMLDivElement;
+  private readonly countdownEl: HTMLDivElement;
+  private lastCountdownText = '';
   private readonly startCallbacks: Array<() => void> = [];
 
   constructor(root: HTMLElement) {
@@ -20,6 +22,12 @@ export class ScreenManager {
       <button id="start-race-button" class="screen-button" type="button">Start Race</button>
     `;
     root.appendChild(this.menuEl);
+
+    // Countdown number floats over the visible game — no dark backdrop.
+    this.countdownEl = document.createElement('div');
+    this.countdownEl.id = 'countdown-overlay';
+    this.countdownEl.className = 'hidden';
+    root.appendChild(this.countdownEl);
 
     const startButton = this.menuEl.querySelector<HTMLButtonElement>('#start-race-button');
     startButton?.addEventListener('click', () => {
@@ -34,11 +42,29 @@ export class ScreenManager {
     this.startCallbacks.push(cb);
   }
 
+  /** Update the big countdown text ("3", "2", "1", "GO!"); no-op if unchanged. */
+  setCountdownText(text: string): void {
+    if (text === this.lastCountdownText) return;
+    this.lastCountdownText = text;
+    this.countdownEl.textContent = text;
+  }
+
+  /** Hide the countdown overlay (used when "GO!" finishes fading during racing). */
+  hideCountdown(): void {
+    this.countdownEl.classList.add('hidden');
+  }
+
   show(screen: Screen): void {
     this.current = screen;
-    // Only the menu overlay exists so far; countdown/paused/results overlays
-    // will be added here in later tasks.
+    // Paused/results overlays will be added here in later tasks.
     this.menuEl.classList.toggle('hidden', screen !== 'menu');
+    if (screen === 'countdown') {
+      this.countdownEl.classList.remove('hidden');
+    } else if (screen !== 'racing') {
+      // Leave it alone on 'racing' so "GO!" can linger briefly after the race
+      // starts; main.ts hides it via hideCountdown(). Any other screen kills it.
+      this.hideCountdown();
+    }
   }
 
   getCurrent(): Screen {

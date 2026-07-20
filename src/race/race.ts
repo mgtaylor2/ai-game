@@ -2,6 +2,8 @@ import type { Kart } from '../kart/kart';
 import type { Track } from '../track/track';
 import type { Waypoint } from '../track/waypoints';
 
+export const TOTAL_LAPS = 3;
+
 const FINISH_LINE_COOLDOWN_SECONDS = 2;
 const MIN_CROSSING_SPEED = 1;
 const WAYPOINT_CAPTURE_RADIUS = 6;
