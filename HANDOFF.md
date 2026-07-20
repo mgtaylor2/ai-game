@@ -4,13 +4,13 @@ Shared "pick up here" note between Claude and Codex working in this repo. Whoeve
 
 ## Last updated
 
-- By: Claude
-- When: 2026-07-19
-- What: Scaffolded the project and built Milestone 1 (drivable kart on one track).
+- By: Codex
+- When: 2026-07-20
+- What: Completed T3 (waypoint-following AI driver), T8 (pause/restart), and T13 (data-driven rectangular-ring track).
 
 ## Current state
 
-Milestone 1 from `ROADMAP.md` is done: one kart, one rectangular-ring track, keyboard controls, arcade physics, wall collision, chase camera, HUD lap counter. No AI, no items, no menus, one track only.
+Milestone 1 is complete. T1/T2 extracted multi-kart-ready race state and ring waypoint progress; T3 adds an AI policy that produces standard kart input from the next waypoint. T6/T9 add a start menu, race countdown, speedometer, and lap HUD. T8 adds Escape pause with Resume / Restart controls; restarting resets the kart and race state before a new countdown. T13 moves the ring's geometry, collision, finish line, waypoints, and starting position into `src/tracks/ring.ts`. The game still wires only the player kart into the loop; T4 is responsible for spawning and simulating the AI field, placement, and standings. No items or additional selectable tracks yet.
 
 ## How to run
 
@@ -24,11 +24,15 @@ npm run preview  # serve the production build locally
 ## Key conventions / where things live
 
 - `src/game/scene.ts` — renderer/camera/lights setup, resize handling.
-- `src/game/loop.ts` — the `requestAnimationFrame` loop; wires input → physics → camera → lap detection → render each frame. This is the one place that ties the other modules together.
+- `src/game/loop.ts` — the `requestAnimationFrame` loop; wires input → physics → camera → race update → render each frame. It freezes simulation on non-racing screens while continuing to render.
 - `src/kart/kart.ts` — kart mesh + state (`position`, `heading`, `speed`). Pure primitives, no external model.
 - `src/kart/controller.ts` — **all physics tuning constants live here** (`MAX_SPEED`, `ACCELERATION`, `TURN_RATE_MAX`, etc.). Change kart feel here, not in `loop.ts`.
 - `src/kart/input.ts` — WASD + arrow key mapping. Listens on `window`, not the canvas.
+- `src/race/race.ts` — per-kart lap counting, waypoint progress, finish-line validation, and reset support.
+- `src/ui/screens.ts` — menu, countdown, and pause overlay DOM/state; game-specific callbacks live in `main.ts`.
 - `src/track/track.ts` — track geometry, wall collision (`resolveCollision`, a position clamp rather than a discrete step check — see gotchas), and finish-line crossing detection (`crossesFinishLine`).
+- `src/track/definition.ts` — plain-data vocabulary used by all tracks (surfaces, walls, collision rectangles, finish line, waypoints, and start grid).
+- `src/tracks/ring.ts` — the current rectangular-ring `TrackDefinition`. Add future tracks here without modifying `Track`'s geometry builder.
 - No external binary assets (images/models) are used yet — see the "Asset strategy" section in `ROADMAP.md` before adding any.
 
 ## Known gotchas
@@ -43,9 +47,12 @@ npm run preview  # serve the production build locally
 
 ## Next up
 
-**See `NEXT-STEPS.md` for the full task board** — bite-size tasks with a dependency graph, sized for one agent session each. Claim a task there, note it here while you work on it. No task is currently claimed.
+**T3 is complete.** `src/ai/driver.ts` exposes `AiDriver#getInput(kart)`, which uses `Race#getNextWaypointIndex(kart)` and track waypoints to produce the normal `InputState`. It applies a dead zone to prevent steering oscillation and slows/brakes for sharp turns. Feed its output directly to `updateKart` when adding AI karts.
 
-The near-term arc is Milestone 2 from `ROADMAP.md` (AI opponents + placement), broken down as T1→T5 on the board. Natural entry points:
-- Add an `ai/` module that reuses `kart/controller.ts`'s `updateKart` with a synthetic `InputState` derived from track waypoints, rather than keyboard input.
-- `Kart` and `updateKart` are already input-source-agnostic (just take an `InputState`), so this shouldn't require changing `kart.ts`/`controller.ts` — just producing `InputState` from an AI policy instead of `InputController`.
-- Lap tracking currently lives inline in `game/loop.ts` for a single kart; multi-kart racing will need per-kart lap/position state, likely worth extracting into its own `race/` module before bolting AI on.
+**T13 is complete.** `Track` now accepts a `TrackDefinition`; the current ring's geometry, collision bounds, finish line, waypoints, and player start position all live in `src/tracks/ring.ts`. A future track only needs another definition object, plus menu selection work in T14.
+
+**T8 is complete.** Escape pauses a race with Resume / Restart controls; restart resets kart and race state and begins a fresh countdown.
+
+The core critical path resumes at **T4 — Multi-kart race manager + placement**: add 3–4 AI `Kart`s, register each with `Race`, call `updateKart(aiKart, aiDriver.getInput(aiKart), track, dt)`, and compute standings from laps plus `Race#getProgress`. After that, T5 owns results flow.
+
+See `NEXT-STEPS.md` for the task board. Keep one task per branch/PR and update both documents on completion.
