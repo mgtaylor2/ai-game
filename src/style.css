@@ -34,3 +34,20 @@ body {
   border-radius: 8px;
   pointer-events: none;
 }
+
+#debug {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #9be89b;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 13px;
+  border-radius: 6px;
+  pointer-events: none;
+}
+
+#debug.hidden {
+  display: none;
+}

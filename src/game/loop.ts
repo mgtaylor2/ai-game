@@ -19,6 +19,7 @@ export function startGameLoop(
   track: Track,
   input: InputController,
   race: Race,
+  onFrame?: () => void,
 ): GameLoopHandles {
   const { scene, camera, renderer } = gameScene;
 
@@ -44,6 +45,7 @@ export function startGameLoop(
     camera.lookAt(kart.position.x, kart.position.y + 1, kart.position.z);
 
     race.update(dt);
+    onFrame?.();
 
     renderer.render(scene, camera);
     requestAnimationFrame(tick);

@@ -10,8 +10,11 @@ export class Track {
   readonly outerHalfZ = 25;
   readonly innerHalfX = 20;
   readonly innerHalfZ = 10;
+  // The finish line only spans the right straight (x in [20, 40]). A full-width line
+  // at z=17 would sit above the island and be crossed twice per lap (once on each
+  // straight), double-counting laps.
   readonly finishLineZ = 17;
-  readonly finishLineMinX = -this.outerHalfX;
+  readonly finishLineMinX = this.innerHalfX;
   readonly finishLineMaxX = this.outerHalfX;
 
   constructor() {
@@ -57,11 +60,12 @@ export class Track {
   }
 
   private buildFinishLine(): void {
-    const geometry = new THREE.PlaneGeometry(this.outerHalfX * 2, 1);
+    const width = this.finishLineMaxX - this.finishLineMinX;
+    const geometry = new THREE.PlaneGeometry(width, 1);
     const material = new THREE.MeshStandardMaterial({ color: 0xffffff });
     const line = new THREE.Mesh(geometry, material);
     line.rotation.x = -Math.PI / 2;
-    line.position.set(0, 0.02, this.finishLineZ);
+    line.position.set((this.finishLineMinX + this.finishLineMaxX) / 2, 0.02, this.finishLineZ);
     this.group.add(line);
   }
 
