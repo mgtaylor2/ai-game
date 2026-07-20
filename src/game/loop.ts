@@ -2,9 +2,9 @@ import type { GameScene } from './scene';
 import type { Kart } from '../kart/kart';
 import type { InputController } from '../kart/input';
 import type { Track } from '../track/track';
+import type { Race } from '../race/race';
 import { updateKart } from '../kart/controller';
 
-const FINISH_LINE_COOLDOWN_SECONDS = 2;
 const CAMERA_BACK_OFFSET = 8;
 const CAMERA_UP_OFFSET = 4;
 const CAMERA_LERP = 0.1;
@@ -18,12 +18,10 @@ export function startGameLoop(
   kart: Kart,
   track: Track,
   input: InputController,
-  onLap: (lapCount: number) => void,
+  race: Race,
 ): GameLoopHandles {
   const { scene, camera, renderer } = gameScene;
 
-  let lapCount = 0;
-  let finishLineCooldown = 0;
   let lastTime = performance.now();
   let running = true;
 
@@ -33,19 +31,7 @@ export function startGameLoop(
     const dt = (now - lastTime) / 1000;
     lastTime = now;
 
-    const prevZ = kart.position.z;
     updateKart(kart, input.getState(), track, dt);
-
-    finishLineCooldown = Math.max(0, finishLineCooldown - dt);
-    if (
-      finishLineCooldown === 0 &&
-      Math.abs(kart.speed) > 1 &&
-      track.crossesFinishLine(kart.position.x, prevZ, kart.position.z)
-    ) {
-      lapCount += 1;
-      finishLineCooldown = FINISH_LINE_COOLDOWN_SECONDS;
-      onLap(lapCount);
-    }
 
     const forwardX = Math.sin(kart.heading);
     const forwardZ = Math.cos(kart.heading);
@@ -56,6 +42,8 @@ export function startGameLoop(
     camera.position.y += (desiredY - camera.position.y) * CAMERA_LERP;
     camera.position.z += (desiredZ - camera.position.z) * CAMERA_LERP;
     camera.lookAt(kart.position.x, kart.position.y + 1, kart.position.z);
+
+    race.update(dt);
 
     renderer.render(scene, camera);
     requestAnimationFrame(tick);

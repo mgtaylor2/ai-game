@@ -4,6 +4,7 @@ import { startGameLoop } from './game/loop';
 import { Kart } from './kart/kart';
 import { InputController } from './kart/input';
 import { Track } from './track/track';
+import { Race } from './race/race';
 
 function bootstrap(): void {
   const app = document.querySelector<HTMLDivElement>('#app');
@@ -31,9 +32,14 @@ function bootstrap(): void {
   const input = new InputController();
   const lapCountEl = document.querySelector<HTMLSpanElement>('#lap-count');
 
-  startGameLoop(gameScene, kart, track, input, (lapCount) => {
-    if (lapCountEl) lapCountEl.textContent = `Lap: ${lapCount}`;
+  const race = new Race(track, {
+    onLap: (_kart, laps) => {
+      if (lapCountEl) lapCountEl.textContent = `Lap: ${laps}`;
+    },
   });
+  race.addKart(kart);
+
+  startGameLoop(gameScene, kart, track, input, race);
 }
 
 bootstrap();
