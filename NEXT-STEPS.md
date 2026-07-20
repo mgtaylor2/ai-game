@@ -61,7 +61,19 @@ Solid arrows are hard dependencies; dotted arrows mean "much easier after". Ever
 
 ## Completed
 
-- [x] **T8 — Pause menu + restart** — Esc pauses a live race with Resume / Restart controls; restart resets the kart and race state before a fresh countdown.
+- [x] **T1 — Extract race module** — `Race` owns per-kart lap state, finish-line cooldowns, and reset support.
+- [x] **T2 — Track waypoints + progress tracking** — the ring has ordered waypoints, a `0` debug toggle, and `Race` progress/anti-reverse-lap tracking.
+- [x] **T3 — AI driver** — waypoint-following AI produces normal kart input.
+- [x] **T6 — Main menu** — the game begins in a screen-state-driven menu flow.
+- [x] **T8 — Pause menu** — Esc pauses a live race with Resume and Quit to Menu controls; Race Again resets the race from the results screen.
+- [x] **T9 — HUD upgrade** — the race start countdown gates input and the HUD shows speed and lap count.
+- [x] **T13 — Data-driven track format** — the ring is a `TrackDefinition` in `src/tracks/ring.ts`.
+
+## Partially merged
+
+- [~] **T4 — Multi-kart race manager + placement** — the player and three AI karts are spawned, updated, and tracked by `Race`, but no placement/standings UI or kart-to-kart collision exists yet.
+- [~] **T5 — Race finish flow** — completing three laps opens a results screen with replay/menu actions, but it always says "1st place" and does not show calculated final standings.
+- [~] **T12 — Visual polish** — procedural road, grass, and finish-line textures; soft shadows; colour treatment; rounded kart bodywork; and wheel-spin animation are merged. Road-edge treatment and a dedicated shadow blob remain optional follow-up work.
 
 ## Ready now (no unmet dependencies)
 

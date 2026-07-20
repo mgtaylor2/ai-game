@@ -3,7 +3,7 @@
 Staged milestones for the Mario-Kart-Wii-style web racer, in intended order. Each is meant to be a playable increment, not a big-bang rewrite.
 
 1. **Drivable kart + 1 track** (done) — single kart, one rectangular-ring track, WASD/arrow controls, wall collision, chase camera, lap counter.
-2. **AI-controlled opponents** — lap-based race against bots, placement/finish standings.
+2. **AI-controlled opponents** *(partially complete)* — lap-based race against three bots is merged; placement and finish standings remain.
 3. **Items** — banana peel, green/red shell, mushroom boost, item boxes on the track.
 4. **Additional tracks + track-select menu.**
 5. **Local split-screen** (2-player, shared keyboard/gamepad split).
