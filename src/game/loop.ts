@@ -5,6 +5,7 @@ import type { Track } from '../track/track';
 import type { Race } from '../race/race';
 import type { Screen } from '../ui/screens';
 import { updateKart } from '../kart/controller';
+import type { AiDriver } from '../ai/driver';
 
 const CAMERA_BACK_OFFSET = 8;
 const CAMERA_UP_OFFSET = 4;
@@ -14,12 +15,18 @@ export interface GameLoopHandles {
   stop: () => void;
 }
 
+export interface CpuRacer {
+  kart: Kart;
+  driver: AiDriver;
+}
+
 export function startGameLoop(
   gameScene: GameScene,
   kart: Kart,
   track: Track,
   input: InputController,
   race: Race,
+  cpuRacers: readonly CpuRacer[],
   getScreen: () => Screen,
   onFrame?: (dt: number) => void,
 ): GameLoopHandles {
@@ -51,6 +58,7 @@ export function startGameLoop(
     switch (getScreen()) {
       case 'racing':
         updateKart(kart, input.getState(), track, dt);
+        for (const cpu of cpuRacers) updateKart(cpu.kart, cpu.driver.getInput(cpu.kart), track, dt);
         updateChaseCamera();
         race.update(dt);
         break;

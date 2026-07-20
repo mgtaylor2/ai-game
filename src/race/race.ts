@@ -19,10 +19,12 @@ interface KartRaceState {
   /** Monotonic count of waypoints passed; never decremented. */
   totalWaypointsPassed: number;
   waypointsSinceLastLap: number;
+  finished: boolean;
 }
 
 export interface RaceOptions {
   onLap?: (kart: Kart, laps: number) => void;
+  onFinish?: (kart: Kart, laps: number) => void;
 }
 
 /** Tracks lap and waypoint progress for any number of karts on a track. */
@@ -30,12 +32,14 @@ export class Race {
   private readonly track: Track;
   private readonly waypoints: Waypoint[];
   private readonly onLap?: (kart: Kart, laps: number) => void;
+  private readonly onFinish?: (kart: Kart, laps: number) => void;
   private readonly states = new Map<Kart, KartRaceState>();
 
   constructor(track: Track, waypoints: Waypoint[], options?: RaceOptions) {
     this.track = track;
     this.waypoints = waypoints;
     this.onLap = options?.onLap;
+    this.onFinish = options?.onFinish;
   }
 
   addKart(kart: Kart): void {
@@ -46,6 +50,7 @@ export class Race {
       nextWaypointIndex: 0,
       totalWaypointsPassed: 0,
       waypointsSinceLastLap: 0,
+      finished: false,
     });
   }
 
@@ -56,6 +61,7 @@ export class Race {
 
       state.cooldown = Math.max(0, state.cooldown - dt);
       if (
+        !state.finished &&
         state.cooldown === 0 &&
         Math.abs(kart.speed) > MIN_CROSSING_SPEED &&
         // Only count crossings in the racing direction defined by the track...
@@ -68,6 +74,10 @@ export class Race {
         state.cooldown = FINISH_LINE_COOLDOWN_SECONDS;
         state.waypointsSinceLastLap = 0;
         this.onLap?.(kart, state.laps);
+        if (state.laps >= TOTAL_LAPS) {
+          state.finished = true;
+          this.onFinish?.(kart, state.laps);
+        }
       }
       state.prevPosition.copy(kart.position);
     }
@@ -124,6 +134,19 @@ export class Race {
     return this.states.get(kart)?.laps ?? 0;
   }
 
+  /** True while the kart is deliberately travelling away from its next checkpoint. */
+  isWrongWay(kart: Kart): boolean {
+    const state = this.states.get(kart);
+    if (!state || Math.abs(kart.speed) < 2) return false;
+    const next = this.waypoints[state.nextWaypointIndex];
+    const forwardX = Math.sin(kart.heading);
+    const forwardZ = Math.cos(kart.heading);
+    const toNextX = next.x - kart.position.x;
+    const toNextZ = next.z - kart.position.z;
+    const distance = Math.hypot(toNextX, toNextZ);
+    return distance > 0.1 && (forwardX * toNextX + forwardZ * toNextZ) / distance < -0.35;
+  }
+
   reset(): void {
     for (const [kart, state] of this.states) {
       state.laps = 0;
@@ -132,6 +155,7 @@ export class Race {
       state.nextWaypointIndex = 0;
       state.totalWaypointsPassed = 0;
       state.waypointsSinceLastLap = 0;
+      state.finished = false;
     }
   }
 }
