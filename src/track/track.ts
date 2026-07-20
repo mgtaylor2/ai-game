@@ -59,6 +59,15 @@ export class Track {
     this.group.add(line);
   }
 
+  /** Recolours the shared course for a selected cup track theme. */
+  setTheme(grassColor: number, roadColor: number, wallColor: number): void {
+    const meshes = this.group.children.filter((child): child is THREE.Mesh => child instanceof THREE.Mesh);
+    const colors = [grassColor, roadColor, grassColor, wallColor, wallColor, wallColor, wallColor];
+    meshes.forEach((mesh, index) => {
+      if (mesh.material instanceof THREE.MeshStandardMaterial && colors[index] !== undefined) mesh.material.color.setHex(colors[index]);
+    });
+  }
+
   /**
    * Clamps a candidate position to stay within the outer boundary and outside the inner
    * island, in place. Returns whether the position was adjusted (i.e. a wall was hit).
