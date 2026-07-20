@@ -3,6 +3,7 @@ import type { Kart } from '../kart/kart';
 import type { InputController } from '../kart/input';
 import type { Track } from '../track/track';
 import type { Race } from '../race/race';
+import type { Screen } from '../ui/screens';
 import { updateKart } from '../kart/controller';
 
 const CAMERA_BACK_OFFSET = 8;
@@ -19,6 +20,7 @@ export function startGameLoop(
   track: Track,
   input: InputController,
   race: Race,
+  getScreen: () => Screen,
   onFrame?: () => void,
 ): GameLoopHandles {
   const { scene, camera, renderer } = gameScene;
@@ -26,14 +28,7 @@ export function startGameLoop(
   let lastTime = performance.now();
   let running = true;
 
-  function tick(now: number): void {
-    if (!running) return;
-
-    const dt = (now - lastTime) / 1000;
-    lastTime = now;
-
-    updateKart(kart, input.getState(), track, dt);
-
+  function updateChaseCamera(): void {
     const forwardX = Math.sin(kart.heading);
     const forwardZ = Math.cos(kart.heading);
     const desiredX = kart.position.x - forwardX * CAMERA_BACK_OFFSET;
@@ -43,10 +38,37 @@ export function startGameLoop(
     camera.position.y += (desiredY - camera.position.y) * CAMERA_LERP;
     camera.position.z += (desiredZ - camera.position.z) * CAMERA_LERP;
     camera.lookAt(kart.position.x, kart.position.y + 1, kart.position.z);
+  }
 
-    race.update(dt);
+  function tick(now: number): void {
+    if (!running) return;
+
+    // Always advance the clock so paused/menu time never accumulates into a
+    // future physics step.
+    const dt = (now - lastTime) / 1000;
+    lastTime = now;
+
+    switch (getScreen()) {
+      case 'racing':
+        updateKart(kart, input.getState(), track, dt);
+        updateChaseCamera();
+        race.update(dt);
+        break;
+      case 'countdown':
+        // Later: tick countdown timer, hold kart still, chase camera settles.
+        break;
+      case 'paused':
+        // Later: frozen simulation, pause overlay handles its own input.
+        break;
+      case 'results':
+        // Later: results screen; maybe a slow orbit camera.
+        break;
+      case 'menu':
+        // Static overview camera set by main.ts; nothing to simulate.
+        break;
+    }
+
     onFrame?.();
-
     renderer.render(scene, camera);
     requestAnimationFrame(tick);
   }
