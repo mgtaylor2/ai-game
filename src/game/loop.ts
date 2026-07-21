@@ -4,7 +4,7 @@ import type { InputController } from '../kart/input';
 import type { Track } from '../track/track';
 import type { Race } from '../race/race';
 import type { Screen } from '../ui/screens';
-import { updateKart } from '../kart/controller';
+import { updateKart, resolveKartCollisions } from '../kart/controller';
 import type { AiDriver } from '../ai/driver';
 
 const CAMERA_BACK_OFFSET = 8;
@@ -31,6 +31,7 @@ export function startGameLoop(
   onFrame?: (dt: number) => void,
 ): GameLoopHandles {
   const { scene, camera, renderer } = gameScene;
+  const allKarts = [kart, ...cpuRacers.map((cpu) => cpu.kart)];
 
   let lastTime = performance.now();
   let running = true;
@@ -63,6 +64,7 @@ export function startGameLoop(
           updateKart(cpu.kart, cpu.driver.getInput(cpu.kart), track, dt);
           cpu.kart.animateWheels(dt);
         }
+        resolveKartCollisions(allKarts, track);
         updateChaseCamera();
         race.update(dt);
         break;
@@ -83,6 +85,7 @@ export function startGameLoop(
         break;
     }
 
+    gameScene.update(dt);
     onFrame?.(dt);
     renderer.render(scene, camera);
     requestAnimationFrame(tick);

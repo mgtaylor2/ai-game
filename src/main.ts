@@ -9,31 +9,47 @@ import { Track } from './track/track';
 import { createWaypointDebugGroup } from './track/waypoints';
 import { ringTrack } from './tracks/ring';
 import { Race, TOTAL_LAPS } from './race/race';
-import { ScreenManager, type Screen } from './ui/screens';
+import { ScreenManager, formatOrdinal, type Screen } from './ui/screens';
+import { Minimap } from './ui/minimap';
+import { CHARACTERS, VEHICLES, getCharacter, getVehicle, combineStats, statsToTuning, type CharacterId, type VehicleId } from './game/roster';
+import { preloadAllModels } from './game/assets';
 
 const COUNTDOWN_SECONDS = 3;
 const GO_TEXT_SECONDS = 0.7;
 /** Multiplier turning kart units/sec (~26 max) into a satisfying km/h readout. */
 const SPEED_DISPLAY_SCALE = 4.5;
-const CPU_START_OFFSETS = [3, 6, 9];
-const CPU_PAINTS = [
-  { color: 0x7b2cbf, accent: 0xf72585 },
-  { color: 0x00a896, accent: 0xf4d35e },
-  { color: 0xf77f00, accent: 0x90be6d },
+/** Matches the fixed 3-lane x 4-row grid the track data provides (slot 0 = player). */
+const TOTAL_RACERS = 12;
+const PLAYER_MINIMAP_COLOR = 0xffd700;
+/** Cycles through every character/vehicle combo so CPUs feel different from each other and the player. */
+const CPU_LOADOUTS: Array<{ character: CharacterId; vehicle: VehicleId }> = [
+  { character: 'star', vehicle: 'kart' }, { character: 'star', vehicle: 'bike' },
+  { character: 'dash', vehicle: 'kart' }, { character: 'dash', vehicle: 'bike' },
+  { character: 'bloom', vehicle: 'kart' }, { character: 'bloom', vehicle: 'bike' },
+  { character: 'star', vehicle: 'kart' }, { character: 'star', vehicle: 'bike' },
+  { character: 'dash', vehicle: 'kart' }, { character: 'dash', vehicle: 'bike' },
+  { character: 'bloom', vehicle: 'kart' },
 ];
+/** Explicit per-CPU paint so repeated character/vehicle combos still look distinct. */
+const CPU_COLORS = [
+  0xe63946, 0x3a86ff, 0x7b2cbf, 0x00a896, 0xf77f00, 0x90be6d,
+  0xf72585, 0xf4d35e, 0x2ec4b6, 0xff006e, 0x8338ec,
+];
+
+/** A lighter, desaturated version of `color` for the vehicle's accent trim. */
+function deriveAccent(color: number): number {
+  const hsl = { h: 0, s: 0, l: 0 };
+  new THREE.Color(color).getHSL(hsl);
+  return new THREE.Color().setHSL(hsl.h, Math.min(1, hsl.s * 0.7), Math.min(0.85, hsl.l + 0.35)).getHex();
+}
 const TRACK_THEMES: Record<string, { grass: number; road: number; wall: number }> = {
   seaside: { grass: 0x3a7d44, road: 0x4a4a4a, wall: 0xcc3333 },
   sunset: { grass: 0xa85a31, road: 0x553b4b, wall: 0xf4a261 },
   forest: { grass: 0x174d38, road: 0x38434a, wall: 0x70a44a },
   candy: { grass: 0xf29ab2, road: 0x7255a3, wall: 0xffe066 },
 };
-const DRIVER_PAINTS: Record<string, { suit: number; helmet: number }> = {
-  star: { suit: 0x2d7dd2, helmet: 0xf9c74f },
-  dash: { suit: 0xe63946, helmet: 0xf1faee },
-  bloom: { suit: 0x9b5de5, helmet: 0xffafcc },
-};
 
-function bootstrap(): void {
+async function bootstrap(): Promise<void> {
   const app = document.querySelector<HTMLDivElement>('#app');
   if (!app) throw new Error('Missing #app root element');
 
@@ -41,8 +57,10 @@ function bootstrap(): void {
     <canvas id="game-canvas"></canvas>
     <div id="hud">
       <div id="lap-count">Lap 1/${TOTAL_LAPS}</div>
+      <div id="position">1st</div>
       <div id="speedometer">0 km/h</div>
     </div>
+    <canvas id="minimap"></canvas>
     <div id="debug" class="hidden"></div>
   `;
 
@@ -50,6 +68,12 @@ function bootstrap(): void {
   if (!canvas) throw new Error('Missing canvas element');
 
   const gameScene = createScene(canvas);
+  // Shows the 'loading' screen (its default initial state) immediately, before
+  // building any karts, so real vehicle/character models are ready before
+  // anything that displays a kart mesh gets constructed -- avoids a visible
+  // pop from procedural fallback to real model right after the menu appears.
+  const screens = new ScreenManager(app);
+  await preloadAllModels();
 
   const track = new Track(ringTrack);
   gameScene.scene.add(track.group);
@@ -60,34 +84,48 @@ function bootstrap(): void {
   gameScene.scene.add(waypointDebugGroup);
 
   const kart = new Kart();
-  kart.reset(track.definition.start.x, track.definition.start.z, track.definition.start.heading);
+  kart.reset(track.definition.start.x, track.definition.start.z, track.definition.start.heading, track.getHeightAt(track.definition.start.x, track.definition.start.z));
   gameScene.scene.add(kart.mesh);
 
   const input = new InputController();
   const hudEl = document.querySelector<HTMLDivElement>('#hud');
   const lapCountEl = document.querySelector<HTMLDivElement>('#lap-count');
+  const positionEl = document.querySelector<HTMLDivElement>('#position');
   const speedometerEl = document.querySelector<HTMLDivElement>('#speedometer');
   const debugEl = document.querySelector<HTMLDivElement>('#debug');
+  const minimapCanvas = document.querySelector<HTMLCanvasElement>('#minimap');
+  if (!minimapCanvas) throw new Error('Missing minimap canvas');
+  const minimap = new Minimap(minimapCanvas);
+  minimap.setTrack(track.definition, track.definition.roadColor, track.definition.grassColor);
 
-  let screens: ScreenManager;
   const race = new Race(track, waypoints, {
     // CPUs are allowed to finish without stealing the player's results screen.
-    onFinish: (finisher) => { if (finisher === kart) setScreen('results'); },
+    onFinish: (finisher) => {
+      if (finisher === kart) {
+        screens.setResults(race.getPosition(kart), TOTAL_RACERS);
+        setScreen('results');
+      }
+    },
   });
   race.addKart(kart);
 
-  const cpuRacers = CPU_START_OFFSETS.map((offset, index) => {
+  // startGrid[0] is pole position, reserved for the player; CPUs take the rest.
+  const cpuStartSlots = track.definition.startGrid.slice(1);
+  const cpuRacers = cpuStartSlots.map((slot, index) => {
     const cpuKart = new Kart();
-    const paint = CPU_PAINTS[index];
-    cpuKart.setPaint(paint.color, paint.accent);
-    cpuKart.setDriverPaint(paint.accent, paint.color);
-    cpuKart.reset(track.definition.start.x, track.definition.start.z + offset, track.definition.start.heading);
+    const loadout = CPU_LOADOUTS[index];
+    const character = getCharacter(loadout.character);
+    const vehicle = getVehicle(loadout.vehicle);
+    const color = CPU_COLORS[index % CPU_COLORS.length];
+    cpuKart.setVehicleType(loadout.vehicle);
+    cpuKart.setPaint(color, deriveAccent(color));
+    cpuKart.setDriverPaint(character.paint.suit, character.paint.helmet);
+    cpuKart.setTuning(statsToTuning(combineStats(character, vehicle)));
+    cpuKart.reset(slot.x, slot.z, slot.heading, track.getHeightAt(slot.x, slot.z));
     gameScene.scene.add(cpuKart.mesh);
     race.addKart(cpuKart);
-    return { kart: cpuKart, driver: new AiDriver(race, waypoints) };
+    return { kart: cpuKart, driver: new AiDriver(race, waypoints), color };
   });
-
-  screens = new ScreenManager(app);
 
   const setOverviewCamera = (): void => {
     gameScene.camera.position.set(0, 45, 55);
@@ -96,9 +134,10 @@ function bootstrap(): void {
 
   const resetRaceState = (): void => {
     const { start } = track.definition;
-    kart.reset(start.x, start.z, start.heading);
+    kart.reset(start.x, start.z, start.heading, track.getHeightAt(start.x, start.z));
     cpuRacers.forEach((cpu, index) => {
-      cpu.kart.reset(start.x, start.z + CPU_START_OFFSETS[index], start.heading);
+      const slot = cpuStartSlots[index];
+      cpu.kart.reset(slot.x, slot.z, slot.heading, track.getHeightAt(slot.x, slot.z));
     });
     race.reset();
   };
@@ -107,6 +146,7 @@ function bootstrap(): void {
     screens.show(screen);
     const hudVisible = screen === 'racing' || screen === 'countdown';
     hudEl?.classList.toggle('hidden', !hudVisible);
+    minimapCanvas.classList.toggle('hidden', !hudVisible);
   };
 
   // Countdown/GO! timers, ticked in onFrame below. main.ts owns this logic;
@@ -122,26 +162,40 @@ function bootstrap(): void {
     setScreen('countdown');
   };
 
-  screens.onStart(startCountdown);
   screens.onRestart(startCountdown);
   screens.onMenu(() => {
     resetRaceState();
     setOverviewCamera();
     setScreen('menu');
   });
-  screens.onVehicleSelected((vehicle) => {
-    const paints = vehicle === 'bike'
-      ? { color: 0x3a86ff, accent: 0x8ecae6 }
-      : { color: 0xe63946, accent: 0xffb703 };
-    kart.setPaint(paints.color, paints.accent);
-  });
+
+  // Character/vehicle selection applies to the live kart immediately (paint,
+  // driver colours, and physics tuning) so the garage showcase and the race
+  // itself always reflect the current picks, not just what's chosen last.
+  let selectedCharacterId: CharacterId = CHARACTERS[0].id;
+  let selectedVehicleId: VehicleId = VEHICLES[0].id;
+  const applyPlayerLoadout = (): void => {
+    const character = getCharacter(selectedCharacterId);
+    const vehicle = getVehicle(selectedVehicleId);
+    kart.setVehicleType(selectedVehicleId);
+    kart.setPaint(vehicle.paint.color, vehicle.paint.accent);
+    kart.setDriverPaint(character.paint.suit, character.paint.helmet);
+    kart.setTuning(statsToTuning(combineStats(character, vehicle)));
+  };
+  applyPlayerLoadout();
+
   screens.onCharacterSelected((character) => {
-    const paint = DRIVER_PAINTS[character] || DRIVER_PAINTS.star;
-    kart.setDriverPaint(paint.suit, paint.helmet);
+    selectedCharacterId = character;
+    applyPlayerLoadout();
+  });
+  screens.onVehicleSelected((vehicle) => {
+    selectedVehicleId = vehicle;
+    applyPlayerLoadout();
   });
   screens.onTrackSelected((trackId) => {
     const theme = TRACK_THEMES[trackId] || TRACK_THEMES.seaside;
     track.setTheme(theme.grass, theme.road, theme.wall);
+    minimap.setTrack(track.definition, theme.road, theme.grass);
     previewElapsed = 0;
   });
   screens.onResume(() => {
@@ -189,6 +243,7 @@ function bootstrap(): void {
   // Cache displayed values so the DOM is only touched when the text changes.
   let shownSpeed = -1;
   let shownLap = -1;
+  let shownPosition = -1;
   const updateHud = (): void => {
     const speed = Math.round(Math.abs(kart.speed) * SPEED_DISPLAY_SCALE);
     if (speed !== shownSpeed) {
@@ -199,6 +254,11 @@ function bootstrap(): void {
     if (lap !== shownLap) {
       shownLap = lap;
       if (lapCountEl) lapCountEl.textContent = `Lap ${lap}/${TOTAL_LAPS}`;
+    }
+    const position = race.getPosition(kart);
+    if (position !== shownPosition) {
+      shownPosition = position;
+      if (positionEl) positionEl.textContent = formatOrdinal(position);
     }
   };
 
@@ -217,6 +277,15 @@ function bootstrap(): void {
     }
     wrongWayElapsed = race.isWrongWay(kart) ? wrongWayElapsed + dt : Math.max(0, wrongWayElapsed - dt * 2);
     screens.setWrongWayVisible(wrongWayElapsed > 0.45);
+  };
+
+  const updateMinimap = (): void => {
+    const screen = screens.getCurrent();
+    if (screen !== 'racing' && screen !== 'countdown') return;
+    minimap.update([
+      { kart, color: PLAYER_MINIMAP_COLOR, isPlayer: true },
+      ...cpuRacers.map((cpu) => ({ kart: cpu.kart, color: cpu.color })),
+    ]);
   };
 
   let previewElapsed = 0;
@@ -239,16 +308,36 @@ function bootstrap(): void {
       gameScene.camera.lookAt(kart.position.x, 0, kart.position.z);
     }
     if (previewElapsed >= PREVIEW_SECONDS) {
-      setScreen('character');
+      startCountdown();
     }
+  };
+
+  // Slowly orbits the camera around the kart on the pre-race selection screens
+  // so paint/model/stat changes are visible as soon as they're picked.
+  let showcaseAngle = 0;
+  const SHOWCASE_SCREENS: Screen[] = ['mode', 'character', 'vehicle'];
+  const updateShowcase = (dt: number): void => {
+    if (!SHOWCASE_SCREENS.includes(screens.getCurrent())) return;
+    showcaseAngle += dt * 0.4;
+    const radius = 9;
+    gameScene.camera.position.set(
+      kart.position.x + Math.sin(showcaseAngle) * radius,
+      kart.position.y + 3.5,
+      kart.position.z + Math.cos(showcaseAngle) * radius,
+    );
+    gameScene.camera.lookAt(kart.position.x, kart.position.y + 1, kart.position.z);
+    kart.heading += dt * 0.6;
+    kart.syncMesh();
   };
 
   const onFrame = (dt: number): void => {
     updateCountdown(dt);
     updateTrackPreview(dt);
+    updateShowcase(dt);
     updateWrongWay(dt);
     updateHud();
     updateDebug();
+    updateMinimap();
   };
 
   // Boot into the menu: world built and rendered behind the overlay, nothing moving.

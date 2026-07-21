@@ -20,6 +20,8 @@ interface KartRaceState {
   totalWaypointsPassed: number;
   waypointsSinceLastLap: number;
   finished: boolean;
+  /** 1-based order in which this kart crossed the line on its final lap; 0 until then. */
+  finishRank: number;
 }
 
 export interface RaceOptions {
@@ -34,6 +36,7 @@ export class Race {
   private readonly onLap?: (kart: Kart, laps: number) => void;
   private readonly onFinish?: (kart: Kart, laps: number) => void;
   private readonly states = new Map<Kart, KartRaceState>();
+  private finishedCount = 0;
 
   constructor(track: Track, waypoints: Waypoint[], options?: RaceOptions) {
     this.track = track;
@@ -51,6 +54,7 @@ export class Race {
       totalWaypointsPassed: 0,
       waypointsSinceLastLap: 0,
       finished: false,
+      finishRank: 0,
     });
   }
 
@@ -76,6 +80,7 @@ export class Race {
         this.onLap?.(kart, state.laps);
         if (state.laps >= TOTAL_LAPS) {
           state.finished = true;
+          state.finishRank = ++this.finishedCount;
           this.onFinish?.(kart, state.laps);
         }
       }
@@ -105,9 +110,10 @@ export class Race {
   }
 
   private isMovingInFinishDirection(current: THREE.Vector3, previous: THREE.Vector3): boolean {
-    const { axis, direction } = this.track.definition.finishLine;
-    const delta = axis === 'z' ? current.z - previous.z : current.x - previous.x;
-    return delta * direction > 0;
+    const { direction } = this.track.definition.finishLine;
+    const dx = current.x - previous.x;
+    const dz = current.z - previous.z;
+    return dx * direction.x + dz * direction.z > 0;
   }
 
   /**
@@ -134,6 +140,27 @@ export class Race {
     return this.states.get(kart)?.laps ?? 0;
   }
 
+  /**
+   * 1-based race position. Finished karts rank by crossing order; unfinished karts
+   * rank below all finished ones, ordered by lap/waypoint progress.
+   */
+  getPosition(kart: Kart): number {
+    const state = this.states.get(kart);
+    if (!state) return 1;
+    let ahead = 0;
+    for (const [otherKart, otherState] of this.states) {
+      if (otherKart === kart) continue;
+      if (this.isAhead(otherKart, otherState, kart, state)) ahead += 1;
+    }
+    return ahead + 1;
+  }
+
+  private isAhead(a: Kart, aState: KartRaceState, b: Kart, bState: KartRaceState): boolean {
+    if (aState.finished !== bState.finished) return aState.finished;
+    if (aState.finished && bState.finished) return aState.finishRank < bState.finishRank;
+    return this.getProgress(a) > this.getProgress(b);
+  }
+
   /** True while the kart is deliberately travelling away from its next checkpoint. */
   isWrongWay(kart: Kart): boolean {
     const state = this.states.get(kart);
@@ -148,6 +175,7 @@ export class Race {
   }
 
   reset(): void {
+    this.finishedCount = 0;
     for (const [kart, state] of this.states) {
       state.laps = 0;
       state.cooldown = 0;
@@ -156,6 +184,7 @@ export class Race {
       state.totalWaypointsPassed = 0;
       state.waypointsSinceLastLap = 0;
       state.finished = false;
+      state.finishRank = 0;
     }
   }
 }

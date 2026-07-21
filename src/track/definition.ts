@@ -1,53 +1,41 @@
 import type { Waypoint } from './waypoints';
 
-/** Axis-aligned rectangle described by its centre and full dimensions. */
-export interface RectangleDefinition {
+/** A point on the track centerline; y gives elevation (visual only, physics stays 2D). */
+export interface PathPoint {
+  x: number;
+  y: number;
+  z: number;
+}
+
+/** A finish-line gate: a segment across the road, plus the tangent direction of legal travel. */
+export interface FinishLineDefinition {
+  a: { x: number; z: number };
+  b: { x: number; z: number };
+  direction: { x: number; z: number };
+}
+
+export interface StartGridSlot {
   x: number;
   z: number;
-  width: number;
-  depth: number;
-}
-
-export interface SurfaceDefinition extends RectangleDefinition {
-  color: number;
-}
-
-export interface WallDefinition extends RectangleDefinition {
-  color: number;
-}
-
-export interface IslandDefinition extends RectangleDefinition {
-  height: number;
-  color: number;
-}
-
-/** A finish line may run across either a horizontal or vertical straight. */
-export interface FinishLineDefinition {
-  axis: 'x' | 'z';
-  coordinate: number;
-  min: number;
-  max: number;
-  /** Sign of legal travel across the line along `axis`. */
-  direction: 1 | -1;
+  heading: number;
 }
 
 export interface TrackDefinition {
   id: string;
   name: string;
-  grass: SurfaceDefinition;
-  road: SurfaceDefinition;
-  islands: IslandDefinition[];
-  walls: WallDefinition[];
-  /** The outer playable boundary and solid rectangular obstacles for collision. */
-  collision: {
-    boundary: RectangleDefinition;
-    solidRects: RectangleDefinition[];
-  };
-  finishLine: FinishLineDefinition;
+  grassColor: number;
+  roadColor: number;
+  wallColor: number;
+  /** Dense closed-loop centerline; consecutive points are close enough that straight
+   *  segments between them read as a smooth curve. */
+  path: PathPoint[];
+  roadWidth: number;
+  /** Sparser subset of `path`, in the {x,z} shape Race/AiDriver expect. */
   waypoints: Waypoint[];
-  start: {
-    x: number;
-    z: number;
-    heading: number;
-  };
+  finishLine: FinishLineDefinition;
+  /** Grid positions for all racers, index 0 is pole position (the player). Follows the
+   *  curve (row = distance behind the line along the path, lane = lateral offset), since
+   *  a straight-line offset grid doesn't make sense on a curved track. */
+  startGrid: StartGridSlot[];
+  start: { x: number; z: number; heading: number };
 }
