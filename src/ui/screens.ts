@@ -47,6 +47,7 @@ export class ScreenManager {
       <div class="game-logo"><span>WII-STYLE</span>KART RACER</div>
       <p class="screen-subtitle">A sunny sprint around Seaside Circuit</p>
       <button data-next="mode" class="screen-button screen-button--primary" type="button">Grand Prix</button>
+      <a href="/ski.html" class="screen-link">Try Alpine Rush, our snowboarding game &rarr;</a>
     `);
     this.createPanel(root, 'mode', `
       <h1 class="screen-title">Choose a Mode</h1>

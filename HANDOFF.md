@@ -4,9 +4,28 @@ Shared "pick up here" note between Claude and Codex working in this repo. Whoeve
 
 ## Last updated
 
-- By: Codex
-- When: 2026-07-20
-- What: Merged the Milestone 2 race-flow implementation and reconciled this handoff with the current branch.
+- By: Claude
+- When: 2026-07-28
+- What: Added a second, fully independent game — **Alpine Rush** (`ski.html` / `src/ski/`) — an endless downhill snowboarding runner. See "Alpine Rush" section below; everything under "Current state" through "Next up" is about the kart racer only and is unchanged.
+
+## Alpine Rush (new game, `src/ski/`)
+
+A separate single-page app (`ski.html` → `src/ski/main.ts`) sharing this repo's Three.js/TypeScript/Vite tooling but with its own scene, physics, and asset pipeline — it does not touch `src/game`, `src/kart`, `src/track`, etc. `vite.config.ts` builds both `index.html` and `ski.html` as separate Rollup entries. The kart racer's menu links to it (`src/ui/screens.ts`); Alpine Rush's own start overlay does not currently link back.
+
+**Architecture**: everything is procedural, no external assets. `terrain.ts`'s `Mountain` class is the single analytic height field (`heightAt(x,z)` / `getHeightAndNormal(x,z)`) that the spline (`spline.ts`), chunk streaming (`chunks.ts`), pickups (`pickups.ts`), gates (`gates.ts`), physics (`physics.ts`/`air.ts`), camera (`camera.ts`), and rider (`rider.ts`) all sample — there is no physics engine and no raycasting. `config.ts` holds every tuning constant grouped by system with a fixed seed (`1337`) so the mountain is deterministic. `postprocessing.ts` runs its own `EffectComposer` chain (bloom → DOF/god-rays/motion-blur uber pass → SMAA → ACES `OutputPass` → chromatic-aberration/grade/vignette/grain uber pass) — SMAA must run *before* `OutputPass` (needs linear-srgb input; this is a hard three.js constraint, not a style choice) so it does not match the pass order implied by a literal reading of some design docs. `snowShader.ts` extends the one shared terrain material (`snowMaterial.ts`) via `onBeforeCompile`.
+
+**Known gotchas specific to Alpine Rush:**
+
+- **`THREE.Clock.getDelta()` returns ~0 on its first call** (it starts the clock and immediately diffs against itself). `main.ts`'s `dt` clamp is `Math.max(0.001, Math.min(0.05, clock.getDelta()))` — the *lower* clamp matters as much as the upper one here: a `dt` of exactly `0` produces a `0/0` in `physics.ts`'s takeoff-detection division, which reads as `NaN`, which makes every `<=` comparison false, which silently forces an incorrect "takeoff" on frame one. If position/height ever come back `NaN` again, check this first.
+- **MeshDepthMaterial's RGBA depth packing has a specific byte order** (`postprocessing.ts`'s `readDepth`) — use three's own `#include <packing>` chunk (`unpackRGBAToDepth` / `perspectiveDepthToViewZ`) rather than hand-rolling the bit-shift dot product; a plausible-looking-but-backwards byte order compiles fine and just produces garbage depth (manifested as the whole frame looking permanently defocused).
+- **Per-vertex normal perturbation on the low-density terrain grid facets badly.** An earlier version of `snowShader.ts` nudged `objectNormal` per-vertex for corduroy/off-piste micro-detail; since terrain vertices are 1.65–6.5 m apart, any noise finer than that spacing is uncorrelated between adjacent vertices and reads as a harsh faceted lattice, not smooth micro-detail. That detail now lives only in the fragment shader (`color_fragment`, smooth per-pixel), driven by the `lateralDistance` varying. Don't reintroduce per-vertex high-frequency noise on this mesh.
+- **`HemisphereLight`'s sky color should not be the full-saturation sky-dome blue.** Using `CONFIG.visual.skyTop` (`0x2e6fd1`) directly as the hemisphere sky color oversaturates every shadowed/ambient-lit surface into deep navy. `scenery.ts` uses a pale desaturated blue (`0xdce8f5`) at a modest intensity instead — treat the hemisphere light's colors as "ambient tint," not "literal sky color."
+- **Point-sprite `gl_PointSize` needs a minimum-distance clamp.** `size * (280.0 / -mvPosition.z)` blows up for a particle very close to (or behind) the camera. Both `ParticlePool` and `Snowfall` in `effects.ts` clamp with `max(1.0, -mvPosition.z)` and an outer `clamp(..., 0.0, N)` — don't remove these when tuning particle sizes.
+- **`BANK_GAIN` in `terrain.ts` is load-bearing and easy to get wrong by an order of magnitude.** It's a `dH/dx`-per-unit-curvature multiplier, not a cosmetic constant; a too-large value (55 was tried and was wrong) produces near-vertical terrain at ordinary turn curvatures, which cascades into spurious takeoffs and `NaN` position within a few frames. If retuning banking, sanity-check `mountain.getHeightAndNormal(x, z).normal.y` near the centerline stays close to 1 (i.e. mildly tilted, not near-vertical).
+- **Headless/software-GL testing (`--use-gl=swiftshader`) reliably closes the page after ~15–20s of any Three.js content in this container**, including the pre-existing kart racer's menu screen alone — this is a sandbox limitation (confirmed: it reproduces on `index.html` too, unrelated to any Alpine Rush code), not a game bug. Keep automated screenshot/interaction scripts short (a few seconds) and don't chase this as a regression.
+- Mirrors the kart racer's existing gotchas too: `dt` clamping, `@types/three`/`three` version pinning, and the software-WebGL screenshot requirement all apply here as well.
+
+**Not yet done / possible follow-ups**: no automated tests; bloom/exposure/particle tuning is "looks reasonable in a quick pass," not carefully calibrated; no reverse link from Alpine Rush's menu back to the kart racer; large `BufferGeometryUtils` chunk in the production build (harmless, just a bundle-size warning) could be split out if that ever matters.
 
 ## Current state
 

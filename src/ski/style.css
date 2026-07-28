@@ -1,0 +1,58 @@
+:root { color-scheme: dark; font-family: -apple-system, "Segoe UI", system-ui, sans-serif; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #2e6fd1; touch-action: none; }
+#app, #ski-canvas { width: 100%; height: 100%; }
+#ski-canvas { display: block; }
+.hidden { display: none !important; }
+
+.ski-root { position: absolute; inset: 0; pointer-events: none; }
+.ski-root button { pointer-events: auto; }
+
+.ski-hud { position: absolute; inset: 0; color: #fff; text-shadow: 0 2px 6px rgba(20,50,90,.45); font-weight: 700; }
+.ski-hud-speed { position: absolute; top: 18px; left: 20px; display: flex; align-items: baseline; gap: 6px; }
+.ski-speed-value { font-size: 46px; font-weight: 900; line-height: 1; }
+.ski-speed-unit { font-size: 15px; opacity: .85; }
+.ski-hud-score { position: absolute; top: 18px; right: 20px; text-align: right; }
+.ski-score-value { font-size: 30px; font-weight: 900; }
+.ski-combo-value { margin-top: 4px; font-size: 17px; font-weight: 900; transition: transform .15s; }
+.ski-hud-distance { position: absolute; bottom: 20px; left: 20px; font-size: 18px; opacity: .9; }
+.ski-hud-boost { position: absolute; bottom: 14px; right: 18px; width: 60px; }
+.ski-shield-badge { text-align: center; font-size: 20px; margin-bottom: 4px; filter: drop-shadow(0 2px 4px rgba(0,0,0,.4)); }
+.ski-boost-ring { width: 60px; height: 60px; transform: rotate(-90deg); }
+.ski-boost-track { fill: none; stroke: rgba(255,255,255,.25); stroke-width: 5; }
+.ski-boost-arc { fill: none; stroke: #ffcc33; stroke-width: 5; stroke-linecap: round; transition: stroke-dashoffset .1s linear; }
+
+.ski-popups { position: absolute; left: 50%; bottom: 34%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.ski-popup { color: #fff; font-size: 26px; font-weight: 900; text-shadow: 0 2px 8px rgba(0,0,0,.5); opacity: 0; transform: translateY(10px) scale(.9); transition: opacity .35s, transform .9s ease-out; white-space: nowrap; }
+.ski-popup--rise { opacity: 1; transform: translateY(-46px) scale(1); }
+.ski-popup--gate { color: #ffd23f; }
+.ski-popup--miss { color: #ff6b6b; }
+.ski-popup--shield { color: #bfe6ff; }
+
+.ski-fps { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); padding: 4px 10px; border-radius: 8px; color: #9be89b; background: rgba(0,0,0,.55); font: 13px ui-monospace, monospace; }
+.ski-error { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); max-width: 80vw; padding: 12px 18px; border-radius: 10px; background: rgba(140,0,0,.85); color: #fff; font: 13px ui-monospace, monospace; }
+.ski-portrait-hint { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(10,20,40,.85); color: #fff; font-size: 20px; font-weight: 700; text-align: center; padding: 0 24px; z-index: 50; pointer-events: none; }
+
+.ski-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: linear-gradient(180deg, #2e6fd1, #bfdbf7); pointer-events: auto; }
+.ski-overlay-panel { text-align: center; color: #0d3a6b; padding: 20px; max-width: 90vw; }
+.ski-title { font-size: clamp(48px, 10vw, 96px); font-style: italic; font-weight: 900; margin: 0; color: #fff; text-shadow: 0 6px 0 rgba(13,58,107,.3); letter-spacing: 1px; }
+.ski-title--small { font-size: clamp(36px, 8vw, 64px); }
+.ski-title-rush { color: #ff8a3d; }
+.ski-subtitle { font-size: 18px; font-weight: 700; color: #ffffffdd; margin: 14px 0 22px; }
+.ski-hints { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 26px; }
+.ski-hint-chip { padding: 8px 14px; border-radius: 999px; background: rgba(255,255,255,.22); backdrop-filter: blur(6px); border: 1px solid rgba(255,255,255,.5); color: #fff; font-size: 14px; font-weight: 700; }
+.ski-start-button { padding: 16px 42px; border: none; border-radius: 999px; font: 900 20px inherit; letter-spacing: 1px; color: #0d3a6b; background: #fff; box-shadow: 0 8px 20px rgba(0,0,0,.25); cursor: pointer; animation: ski-pulse 1.6s ease-in-out infinite; }
+.ski-end-score { color: #fff; font-size: 20px; font-weight: 800; margin: 16px 0 26px; }
+@keyframes ski-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+
+.ski-touch-ui { position: absolute; inset: 0; pointer-events: none; }
+.ski-touch-zone { position: absolute; top: 0; bottom: 0; width: 40%; pointer-events: auto; }
+.ski-touch-zone--left { left: 0; }
+.ski-touch-zone--right { right: 0; }
+.ski-touch-button { position: absolute; bottom: 26px; width: 74px; height: 74px; border-radius: 999px; border: 1px solid rgba(255,255,255,.6); background: rgba(255,255,255,.22); backdrop-filter: blur(6px); color: #fff; font: 900 14px inherit; pointer-events: auto; }
+.ski-touch-button--jump { left: 26px; }
+.ski-touch-button--spin { right: 26px; }
+
+@media (max-width: 600px) {
+  .ski-speed-value { font-size: 34px; }
+  .ski-score-value { font-size: 22px; }
+}
