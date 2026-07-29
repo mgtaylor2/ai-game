@@ -73,9 +73,9 @@ const finishNormal = normals[0];
 export const ringTrack: TrackDefinition = {
   id: 'ring',
   name: 'Sunset Serpentine',
-  grassColor: 0x3a7d44,
-  roadColor: 0x4a4a4a,
-  wallColor: 0xcc3333,
+  grassColor: 0x57a355,
+  roadColor: 0x77797e,
+  wallColor: 0xd94b4b,
   path,
   roadWidth: ROAD_WIDTH,
   waypoints: buildWaypoints(path),

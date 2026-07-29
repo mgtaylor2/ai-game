@@ -336,6 +336,21 @@ export class Track {
     return true;
   }
 
+  /**
+   * How close (x, z) is to the road edge, as 0 at the centreline out to 1 at the barrier.
+   *
+   * Deliberately not an "off road" test: `resolveCollision` clamps every kart inside the road every
+   * frame, so a kart is never actually off it. Proximity is the honest signal, and it's what the
+   * barrier-scrape warning in the grade pass keys off.
+   */
+  getEdgeProximity(x: number, z: number): number {
+    const { pointX, pointZ, normalX, normalZ } = this.locateOnPath(x, z);
+    const lateral = (x - pointX) * normalX + (z - pointZ) * normalZ;
+    const halfWidth = this.definition.roadWidth / 2;
+    if (halfWidth <= 0) return 0;
+    return Math.min(1, Math.abs(lateral) / halfWidth);
+  }
+
   /** Returns true when movement crosses the finish-line gate. */
   crossesFinishLine(previous: THREE.Vector3, current: THREE.Vector3): boolean {
     const { a, b } = this.definition.finishLine;

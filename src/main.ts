@@ -12,7 +12,6 @@ import { Race, TOTAL_LAPS } from './race/race';
 import { ScreenManager, formatOrdinal, type Screen } from './ui/screens';
 import { Minimap } from './ui/minimap';
 import { CHARACTERS, VEHICLES, getCharacter, getVehicle, combineStats, statsToTuning, type CharacterId, type VehicleId } from './game/roster';
-import { preloadAllModels } from './game/assets';
 
 const COUNTDOWN_SECONDS = 3;
 const GO_TEXT_SECONDS = 0.7;
@@ -43,10 +42,10 @@ function deriveAccent(color: number): number {
   return new THREE.Color().setHSL(hsl.h, Math.min(1, hsl.s * 0.7), Math.min(0.85, hsl.l + 0.35)).getHex();
 }
 const TRACK_THEMES: Record<string, { grass: number; road: number; wall: number }> = {
-  seaside: { grass: 0x3a7d44, road: 0x4a4a4a, wall: 0xcc3333 },
-  sunset: { grass: 0xa85a31, road: 0x553b4b, wall: 0xf4a261 },
-  forest: { grass: 0x174d38, road: 0x38434a, wall: 0x70a44a },
-  candy: { grass: 0xf29ab2, road: 0x7255a3, wall: 0xffe066 },
+  seaside: { grass: 0x57a355, road: 0x77797e, wall: 0xd94b4b },
+  sunset: { grass: 0xc4784a, road: 0x7d6473, wall: 0xf6b26b },
+  forest: { grass: 0x3c7a5a, road: 0x6c757c, wall: 0x86bd5c },
+  candy: { grass: 0xf4a8bd, road: 0x9b82c4, wall: 0xffe066 },
 };
 
 async function bootstrap(): Promise<void> {
@@ -68,12 +67,9 @@ async function bootstrap(): Promise<void> {
   if (!canvas) throw new Error('Missing canvas element');
 
   const gameScene = createScene(canvas);
-  // Shows the 'loading' screen (its default initial state) immediately, before
-  // building any karts, so real vehicle/character models are ready before
-  // anything that displays a kart mesh gets constructed -- avoids a visible
-  // pop from procedural fallback to real model right after the menu appears.
+  // Every vehicle and driver is built procedurally now, so there is nothing to fetch and no
+  // loading step -- the menu can come up immediately.
   const screens = new ScreenManager(app);
-  await preloadAllModels();
 
   const track = new Track(ringTrack);
   gameScene.scene.add(track.group);

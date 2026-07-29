@@ -6,7 +6,7 @@ Shared "pick up here" note between Claude and Codex working in this repo. Whoeve
 
 - By: Claude
 - When: 2026-07-29
-- What: Added a second, fully independent game — **Alpine Rush** (`ski.html` / `src/ski/`) — an endless downhill snowboarding runner, then did a correctness audit and a visual/UI pass over it. See "Alpine Rush" section below; everything under "Current state" through "Next up" is about the kart racer only and is unchanged.
+- What: Added a second, fully independent game — **Alpine Rush** (`ski.html` / `src/ski/`) — an endless downhill snowboarding runner, then audited and polished it. Then ported its visual approach back into the kart racer and replaced the third-party vehicle/character GLBs with purpose-built procedural models (see "Vehicles, drivers and the Alpine Rush style port" under Current state).
 
 ## Alpine Rush (new game, `src/ski/`)
 
@@ -26,16 +26,12 @@ A separate single-page app (`ski.html` → `src/ski/main.ts`) sharing this repo'
 - **`THREE.Clock.getDelta()` returns ~0 on its first call** (it starts the clock and immediately diffs against itself). `main.ts`'s `dt` clamp is `Math.max(0.001, Math.min(0.05, clock.getDelta()))` — the *lower* clamp matters as much as the upper one here: a `dt` of exactly `0` produces a `0/0` in `physics.ts`'s takeoff-detection division, which reads as `NaN`, which makes every `<=` comparison false, which silently forces an incorrect "takeoff" on frame one. If position/height ever come back `NaN` again, check this first.
 - **MeshDepthMaterial's RGBA depth packing has a specific byte order** (`postprocessing.ts`'s `readDepth`) — use three's own `#include <packing>` chunk (`unpackRGBAToDepth` / `perspectiveDepthToViewZ`) rather than hand-rolling the bit-shift dot product; a plausible-looking-but-backwards byte order compiles fine and just produces garbage depth (manifested as the whole frame looking permanently defocused).
 
-- **`THREE.Clock.getDelta()` returns ~0 on its first call** (it starts the clock and immediately diffs against itself). `main.ts`'s `dt` clamp is `Math.max(0.001, Math.min(0.05, clock.getDelta()))` — the *lower* clamp matters as much as the upper one here: a `dt` of exactly `0` produces a `0/0` in `physics.ts`'s takeoff-detection division, which reads as `NaN`, which makes every `<=` comparison false, which silently forces an incorrect "takeoff" on frame one. If position/height ever come back `NaN` again, check this first.
-- **MeshDepthMaterial's RGBA depth packing has a specific byte order** (`postprocessing.ts`'s `readDepth`) — use three's own `#include <packing>` chunk (`unpackRGBAToDepth` / `perspectiveDepthToViewZ`) rather than hand-rolling the bit-shift dot product; a plausible-looking-but-backwards byte order compiles fine and just produces garbage depth (manifested as the whole frame looking permanently defocused).
 - **Per-vertex normal perturbation on the low-density terrain grid facets badly.** An earlier version of `snowShader.ts` nudged `objectNormal` per-vertex for corduroy/off-piste micro-detail; since terrain vertices are 1.65–6.5 m apart, any noise finer than that spacing is uncorrelated between adjacent vertices and reads as a harsh faceted lattice, not smooth micro-detail. That detail now lives only in the fragment shader (`color_fragment`, smooth per-pixel), driven by the `lateralDistance` varying. Don't reintroduce per-vertex high-frequency noise on this mesh.
 - **`HemisphereLight`'s sky color should not be the full-saturation sky-dome blue.** Using `CONFIG.visual.skyTop` (`0x2e6fd1`) directly as the hemisphere sky color oversaturates every shadowed/ambient-lit surface into deep navy. `scenery.ts` uses a pale desaturated blue (`0xdce8f5`) at a modest intensity instead — treat the hemisphere light's colors as "ambient tint," not "literal sky color."
 - **Point-sprite `gl_PointSize` needs a minimum-distance clamp.** `size * (280.0 / -mvPosition.z)` blows up for a particle very close to (or behind) the camera. Both `ParticlePool` and `Snowfall` in `effects.ts` clamp with `max(1.0, -mvPosition.z)` and an outer `clamp(..., 0.0, N)` — don't remove these when tuning particle sizes.
 - **`terrain.valleyWallGain` and `terrain.bankGain` are load-bearing and easy to get wrong by an order of magnitude.** Both are height-per-unit multipliers, not cosmetic knobs. `valleyWallGain` at 0.14 puts a ~296 m near-vertical wall at the corridor edge that fills the whole frame (0.012 gives a ~25 m valley side); `bankGain` at 55 tilts the piste near-vertical at ordinary turn curvature. Either cascades into spurious takeoffs and `NaN` position within a few frames. When retuning, sanity-check that the surface normal near the centerline keeps `normal.y` close to 1.
 - **Exposure/bloom/fog are a single interlocking budget, and snow occupies almost the entire highlight range.** `visual.snowColor` is deliberately below pure white to leave headroom, `post.bloomThreshold` sits just above lit snow so bloom picks out the sun and orbs rather than smearing the slope, and the filmic grade's warm highlight gain is kept small because pushing it visibly tints snow beige. Raising any one of exposure, bloom strength or snow brightness in isolation blows the frame out.
 - **Keep the sun well off the travel axis.** The run always heads toward +z; a sun near that heading is stared into for the entire game. `scenery.sunAzimuthDeg` (65°) plus a 35° elevation side-lights the terrain, which is what makes the rollers and moguls read at all, and still swings into frame on hard turns for god rays.
-- **Per-vertex normal perturbation on the low-density terrain grid facets badly.** An earlier version of `snowShader.ts` nudged `objectNormal` per-vertex for corduroy/off-piste micro-detail; since terrain vertices are 1.65–6.5 m apart, any noise finer than that spacing is uncorrelated between adjacent vertices and reads as a harsh faceted lattice, not smooth micro-detail. That detail now lives only in the fragment shader (`color_fragment`, smooth per-pixel), driven by the `lateralDistance` varying. Don't reintroduce per-vertex high-frequency noise on this mesh.
-- **`HemisphereLight`'s sky color should not be the full-saturation sky-dome blue.** Using `CONFIG.visual.skyTop` (`0x2e6fd1`) directly as the hemisphere sky color oversaturates every shadowed/ambient-lit surface into deep navy. `scenery.ts` uses a pale desaturated blue (`0xdce8f5`) at a modest intensity instead — treat the hemisphere light's colors as "ambient tint," not "literal sky color."
 - **Point-sprite `gl_PointSize` needs a minimum-distance clamp.** `size * (k / -mvPosition.z)` blows up for a particle very close to (or behind) the camera. Both `ParticlePool` and `Snowfall` in `effects.ts` clamp the divisor with `max(...)` and cap the result; `Snowfall` additionally fades flakes within a few metres of the lens, or a single close flake covers a huge screen area and reads as a smeared blob.
 - **Headless/software-GL testing (`--use-gl=swiftshader`) reliably closes the page after ~15–20s of any Three.js content in this container**, including the pre-existing kart racer's menu screen alone — this is a sandbox limitation (confirmed: it reproduces on `index.html` too, unrelated to any Alpine Rush code), not a game bug. Keep automated screenshot/interaction scripts short (a few seconds) and don't chase this as a regression. It also runs at only a few fps, so anything you judge from a headless screenshot that depends on frame rate (trail length, particle density, distance travelled) will look wrong — verify those on real hardware.
 - **The start button pulses forever, so Playwright's actionability check never sees it "stable".** Use `page.click(..., { force: true })` in tests. The pulse is disabled under `prefers-reduced-motion`.
@@ -49,7 +45,25 @@ Milestone 1 is complete. T1/T2 extracted multi-kart-ready race state and ring wa
 
 The current branch also contains the Milestone 2 race-flow work: the loop now simulates the player plus three AI karts, and the player reaching three laps opens a results screen with Race Again and Back to Menu actions. This is **not yet a complete T4/T5 implementation**: there is no live placement/standings UI, no kart-to-kart collision, and the results copy is hard-coded to "1st place" rather than calculated from finish order. The track-selection flow currently changes the ring track's palette only; it does not select distinct track definitions. No items or additional playable tracks exist yet.
 
-The current visual pass deliberately targets an original, bright arcade-kart-racer look rather than copying Nintendo-owned characters, tracks, UI, or assets. It adds procedural grass/asphalt/checker textures, soft shadows, filmic colour treatment, distance fog, rounded kart bodywork, and speed-driven wheel animation. Keep future art and audio original or appropriately licensed.
+The current visual pass deliberately targets an original, bright arcade-kart-racer look rather than copying Nintendo-owned characters, tracks, UI, or assets. It adds procedural grass/asphalt/checker textures, soft shadows, filmic colour treatment, distance fog, and speed-driven wheel animation. Keep future art and audio original or appropriately licensed.
+
+### Vehicles, drivers and the Alpine Rush style port
+
+The kart racer now uses **fully procedural vehicles and drivers** (`src/kart/models/`) and shares Alpine Rush's lighting and grading approach. The Kenney GLB pipeline (`src/game/assets.ts`, `public/models/`) and its loading screen are **gone**; nothing is fetched at startup any more.
+
+- `models/materials.ts` — flat-shaded material helpers, a shared fixed palette, and `slab()`, a lightly-bevelled box that is the workhorse shape for bodywork. Vehicles no longer use toon materials with inverted-hull outlines: the hull costs a second draw of every mesh and pokes through the concave shapes a real kart needs (seat bucket, wheel wells, fork legs).
+- `models/vehicles.ts` — `buildKart()` and `buildBike()`. Each returns its wheels, its steerable front assembly, its **live tint materials**, and the local-space `seat` / `wheelGrip` / `exhausts` / `driverScale` that position everything else. Because paint is a live material rather than a baked texture, any racer can be any colour — the old truck models only existed in four fixed colours and the code had to pick the nearest one.
+- `models/driver.ts` — a driver with real two-segment limbs and a per-vehicle `DriverPose`. The old character GLB's legs were single rigid pieces with no knee, so it could never actually sit; the code angled the whole leg and left a comment admitting it read as "standing on the roof".
+- `src/game/postprocessing.ts` — bloom → SMAA → ACES output → one uber grade pass (film grade, vignette, grain, chromatic aberration, radial speed streaks, barrier-scrape tint). Same pass-ordering constraint as the ski game: **SMAA must precede `OutputPass`**.
+
+**Gotchas specific to this work:**
+
+- **Compose model transforms in geometry space when order matters.** Three applies scale *before* Euler rotation, so a mesh-level "flatten then lay forward" pair flattens along the wrong world axis — the kart's nose cone came out skewed off-centre. Bake it with `geometry.scale()/rotateX()` instead, where the order is explicit.
+- **Derive a wheel's height from its own radius.** The bike's front wheel was positioned by eye relative to its steering pivot and ended up 0.14 below the track, pitching the whole bike nose-down. The fork length and pitch are now derived from that same wheel position rather than tuned next to it.
+- **A scaled rig needs its targets in its own units.** `Driver` is scaled by `vehicle.driverScale`, so `kart.ts` divides the grip offset by that scale before passing it in; feeding raw vehicle-space distances into the scaled rig aimed the arms at the wrong place.
+- **Don't hide two genuinely different poses behind one boolean.** `upright ? a : b` made the kart and bike poses impossible to tune independently and left the bike rider's legs dangling; they are now named `KART_POSE` / `BIKE_POSE` structs.
+- **Camera smoothing must be frame-rate independent.** The chase camera used a per-frame lerp constant, so it lagged badly at low frame rates (very visible in headless capture) and snapped at high ones. It now uses `1 - exp(-rate * dt)`.
+- **Same exposure/bloom budget lesson as the ski game, in the opposite direction.** Bright saturated accent colours (amber trim, `0xffb703`) clip to white long before the tarmac looks right. The road and grass palettes were lightened *and* exposure pulled back together; changing either alone gives you a murky track or blown-out karts.
 
 ## How to run
 
@@ -62,9 +76,11 @@ npm run preview  # serve the production build locally
 
 ## Key conventions / where things live
 
-- `src/game/scene.ts` — renderer/camera/lights setup, resize handling.
+- `src/game/scene.ts` — sky dome, sun/hemisphere lighting and tone mapping, all keyed off `SCENE_CONFIG`.
+- `src/game/postprocessing.ts` — the composer chain and its `POST_CONFIG` knobs.
 - `src/game/loop.ts` — the `requestAnimationFrame` loop; wires input → physics → camera → race update → render each frame. It freezes simulation on non-racing screens while continuing to render.
-- `src/kart/kart.ts` — kart mesh + state (`position`, `heading`, `speed`). Pure primitives, no external model.
+- `src/kart/kart.ts` — kart state (`position`, `heading`, `speed`) plus the vehicle/driver rig and its steer, roll and wheel-spin animation.
+- `src/kart/models/` — procedural vehicles (`vehicles.ts`), the seated driver (`driver.ts`) and shared material/geometry helpers (`materials.ts`).
 - `src/kart/controller.ts` — **all physics tuning constants live here** (`MAX_SPEED`, `ACCELERATION`, `TURN_RATE_MAX`, etc.). Change kart feel here, not in `loop.ts`.
 - `src/kart/input.ts` — WASD + arrow key mapping. Listens on `window`, not the canvas.
 - `src/race/race.ts` — per-kart lap counting, waypoint progress, finish-line validation, and reset support.
@@ -72,7 +88,7 @@ npm run preview  # serve the production build locally
 - `src/track/track.ts` — track geometry, wall collision (`resolveCollision`, a position clamp rather than a discrete step check — see gotchas), and finish-line crossing detection (`crossesFinishLine`).
 - `src/track/definition.ts` — plain-data vocabulary used by all tracks (surfaces, walls, collision rectangles, finish line, waypoints, and start grid).
 - `src/tracks/ring.ts` — the current rectangular-ring `TrackDefinition`. Add future tracks here without modifying `Track`'s geometry builder.
-- No external binary assets (images/models) are used yet — see the "Asset strategy" section in `ROADMAP.md` before adding any.
+- No external binary assets (images/models) are used at all — both games build everything procedurally at runtime. See the "Asset strategy" section in `ROADMAP.md` before adding any.
 
 ## Known gotchas
 

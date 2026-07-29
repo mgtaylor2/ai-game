@@ -1,6 +1,6 @@
 import { CHARACTERS, VEHICLES, type StatTriad } from '../game/roster';
 
-export type Screen = 'loading' | 'menu' | 'mode' | 'character' | 'vehicle' | 'track' | 'preview' | 'countdown' | 'racing' | 'paused' | 'results';
+export type Screen = 'menu' | 'mode' | 'character' | 'vehicle' | 'track' | 'preview' | 'countdown' | 'racing' | 'paused' | 'results';
 export type Vehicle = 'kart' | 'bike';
 export type Character = 'star' | 'dash' | 'bloom';
 
@@ -26,7 +26,7 @@ export function formatOrdinal(n: number): string {
 
 /** Presents the race flow and leaves game-state decisions to main.ts. */
 export class ScreenManager {
-  private current: Screen = 'loading';
+  private current: Screen = 'menu';
   private readonly panels = new Map<Screen, HTMLDivElement>();
   private readonly countdownEl: HTMLDivElement;
   private readonly wrongWayEl: HTMLDivElement;
@@ -39,10 +39,6 @@ export class ScreenManager {
   private readonly characterCallbacks: Array<(character: Character) => void> = [];
 
   constructor(root: HTMLElement) {
-    this.createPanel(root, 'loading', `
-      <div class="game-logo"><span>WII-STYLE</span>KART RACER</div>
-      <p class="screen-subtitle loading-text">Loading track assets…</p>
-    `);
     this.createPanel(root, 'menu', `
       <div class="game-logo"><span>WII-STYLE</span>KART RACER</div>
       <p class="screen-subtitle">A sunny sprint around Seaside Circuit</p>
@@ -131,7 +127,7 @@ export class ScreenManager {
     root.querySelector('#restart-race-button')?.addEventListener('click', () => this.restartCallbacks.forEach((cb) => cb()));
     root.querySelectorAll('[data-menu]').forEach((button) => button.addEventListener('click', () => this.menuCallbacks.forEach((cb) => cb())));
 
-    this.show('loading');
+    this.show('menu');
   }
 
   private createPanel(root: HTMLElement, screen: Screen, html: string): void {

@@ -5,11 +5,23 @@ import type { Track } from '../track/track';
 import type { Race } from '../race/race';
 import type { Screen } from '../ui/screens';
 import { updateKart, resolveKartCollisions } from '../kart/controller';
+import type { InputState } from '../kart/input';
 import type { AiDriver } from '../ai/driver';
+import { RacePostProcessing } from './postprocessing';
 
-const CAMERA_BACK_OFFSET = 8;
-const CAMERA_UP_OFFSET = 4;
-const CAMERA_LERP = 0.1;
+/** Collapses the two boolean steer keys into the -1..1 axis the visual model wants. */
+function steerAxis(input: InputState): number {
+  return (input.right ? 1 : 0) - (input.left ? 1 : 0);
+}
+
+const CAMERA_BACK_OFFSET = 9;
+const CAMERA_UP_OFFSET = 2.9;
+/**
+ * Chase-camera follow rate, per second. Converted to a per-frame factor with an exponential so the
+ * camera settles at the same real-world rate regardless of frame rate -- a raw per-frame lerp makes
+ * the camera lag badly on a slow machine and snap on a fast one.
+ */
+const CAMERA_FOLLOW_RATE = 6;
 
 export interface GameLoopHandles {
   stop: () => void;
@@ -33,18 +45,34 @@ export function startGameLoop(
   const { scene, camera, renderer } = gameScene;
   const allKarts = [kart, ...cpuRacers.map((cpu) => cpu.kart)];
 
+  const postFx = new RacePostProcessing(renderer, scene, camera, window.innerWidth, window.innerHeight);
+  let elapsed = 0;
+
+  // Resize lives here rather than in createScene because the composer's render targets have to be
+  // resized in lockstep with the renderer; splitting them across two listeners invites them to drift.
+  const handleResize = (): void => {
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+    renderer.setSize(width, height);
+    postFx.setSize(width, height);
+  };
+  window.addEventListener('resize', handleResize);
+
   let lastTime = performance.now();
   let running = true;
 
-  function updateChaseCamera(): void {
+  function updateChaseCamera(dt: number): void {
     const forwardX = Math.sin(kart.heading);
     const forwardZ = Math.cos(kart.heading);
     const desiredX = kart.position.x - forwardX * CAMERA_BACK_OFFSET;
     const desiredY = kart.position.y + CAMERA_UP_OFFSET;
     const desiredZ = kart.position.z - forwardZ * CAMERA_BACK_OFFSET;
-    camera.position.x += (desiredX - camera.position.x) * CAMERA_LERP;
-    camera.position.y += (desiredY - camera.position.y) * CAMERA_LERP;
-    camera.position.z += (desiredZ - camera.position.z) * CAMERA_LERP;
+    const follow = 1 - Math.exp(-CAMERA_FOLLOW_RATE * dt);
+    camera.position.x += (desiredX - camera.position.x) * follow;
+    camera.position.y += (desiredY - camera.position.y) * follow;
+    camera.position.z += (desiredZ - camera.position.z) * follow;
     camera.lookAt(kart.position.x, kart.position.y + 1, kart.position.z);
   }
 
@@ -57,22 +85,25 @@ export function startGameLoop(
     lastTime = now;
 
     switch (getScreen()) {
-      case 'racing':
-        updateKart(kart, input.getState(), track, dt);
-        kart.animateWheels(dt);
+      case 'racing': {
+        const playerInput = input.getState();
+        updateKart(kart, playerInput, track, dt);
+        kart.animate(dt, steerAxis(playerInput));
         for (const cpu of cpuRacers) {
-          updateKart(cpu.kart, cpu.driver.getInput(cpu.kart), track, dt);
-          cpu.kart.animateWheels(dt);
+          const cpuInput = cpu.driver.getInput(cpu.kart);
+          updateKart(cpu.kart, cpuInput, track, dt);
+          cpu.kart.animate(dt, steerAxis(cpuInput));
         }
         resolveKartCollisions(allKarts, track);
-        updateChaseCamera();
+        updateChaseCamera(dt);
         race.update(dt);
         break;
+      }
       case 'countdown':
         // Kart frozen, input ignored; camera settles into chase position so
         // the view is already correct when racing begins. Countdown timing
         // itself is owned by main.ts via onFrame(dt).
-        updateChaseCamera();
+        updateChaseCamera(dt);
         break;
       case 'paused':
         // Later: frozen simulation, pause overlay handles its own input.
@@ -87,7 +118,15 @@ export function startGameLoop(
 
     gameScene.update(dt);
     onFrame?.(dt);
-    renderer.render(scene, camera);
+
+    elapsed += dt;
+    postFx.render(scene, camera, {
+      speed01: Math.min(1, Math.abs(kart.speed) / Math.max(0.001, kart.tuning.maxSpeed)),
+      // Only the outer part of the road tints, so normal racing line stays clean and it kicks in
+      // as a warning when you're genuinely about to scrape.
+      edgeProximity: Math.max(0, track.getEdgeProximity(kart.position.x, kart.position.z) - 0.62) / 0.38,
+      elapsed,
+    });
     requestAnimationFrame(tick);
   }
 
@@ -96,6 +135,7 @@ export function startGameLoop(
   return {
     stop: () => {
       running = false;
+      window.removeEventListener('resize', handleResize);
     },
   };
 }
