@@ -165,6 +165,12 @@ export class SkiHud {
 
     window.addEventListener('error', (event) => this.showError(event.message));
 
+    // The single-file build is opened straight off disk with no sibling kart racer, so the cross-link
+    // would just 404. Anything served over http(s) is the real multi-page site and keeps it.
+    if (window.location.protocol === 'file:') {
+      this.root.querySelectorAll('.ski-back').forEach((el) => el.remove());
+    }
+
     this.setHudVisible(false);
   }
 
