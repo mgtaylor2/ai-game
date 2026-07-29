@@ -6,15 +6,22 @@ export const CONFIG = {
     skyTop: 0x2e6fd1,
     skyHorizon: 0xbfdbf7,
     sunHalo: 0xfff2d0,
-    snowColor: 0xf2f6ff,
-    snowShadowTint: 0xaecbec,
-    jacketColor: 0xe8552d,
-    helmetColor: 0xf4b93d,
-    goggleColor: 0x3a6ea8,
+    // Deliberately below pure white: snow is the brightest thing on screen and is lit by a >1 intensity
+    // sun, so leaving headroom here is what keeps highlights from clipping to a flat white sheet.
+    snowColor: 0xdfe7f2,
+    snowShadowTint: 0x8fa9cc,
+    // Pushed brighter than a "correct" orange on purpose: ACES plus sub-1.0 exposure pulls mid
+    // saturated tones down noticeably, and the rider is the one thing that must stay readable against
+    // a full screen of bright snow.
+    jacketColor: 0xff6a2a,
+    helmetColor: 0xffc94a,
+    goggleColor: 0x2f6fbf,
     pineColor: 0x1f4d33,
-    fogColor: 0xc9ddf2,
-    fogDensity: 0.0025,
-    exposure: 1.05,
+    fogColor: 0xcfe0f2,
+    // Thin enough to keep several hundred metres of mountain readable -- the spec's 0.0025 hides the
+    // piste ahead behind haze at this corridor scale and flattens the whole frame to white.
+    fogDensity: 0.0011,
+    exposure: 0.92,
     maxPixelRatio: 1.5,
   },
 
@@ -38,6 +45,22 @@ export const CONFIG = {
   terrain: {
     corridorHalfWidth: 24,
     pisteHalfWidth: 18,
+    /**
+     * Valley walls are `gain * excess^2` metres above the corridor, where `excess` is how far past
+     * `corridorHalfWidth` you are. Load-bearing and easy to get wrong by an order of magnitude: at the
+     * 70 m terrain edge, `excess` is 46, so 0.012 gives a ~25 m rise (a believable valley side that the
+     * forest sits on) while 0.14 gives ~296 m -- a near-vertical wall that fills the whole frame and
+     * cascades into spurious takeoffs. Sanity-check by confirming surface normals near the piste keep
+     * `normal.y` close to 1.
+     */
+    valleyWallGain: 0.012,
+    valleyWallCapExcess: 55,
+    /**
+     * Multiplies `curvature * lateralDistance` into a banked cross-slope. Peak spline curvature is about
+     * 0.046 rad/m, so this is roughly `tan(bankAngle) / 0.046` at the piste edge: 3.5 banks turns by
+     * ~9 degrees, which supports a carve without sliding the rider off the groomed lane.
+     */
+    bankGain: 3.5,
     rollerShortWavelength: 14,
     rollerShortAmp: 0.35,
     rollerLongWavelength: 140,
@@ -74,10 +97,12 @@ export const CONFIG = {
     treeNearDensity: 0.3,
     treeFarDensity: 0.8,
     treeVariants: 3,
-    treeScaleMin: 0.95,
-    treeScaleMax: 1.8,
-    treeMaxTilt: 0.12,
-    heroTreeChance: 0.12,
+    // One unit of scale is a ~3 m pine, so this is a 5-10 m tree. Anything near 1.0 reads as scrub
+    // against a 48 m-wide corridor rather than as a forest flanking the piste.
+    treeScaleMin: 1.6,
+    treeScaleMax: 3.2,
+    treeMaxTilt: 0.1,
+    heroTreeChance: 0.3,
     rockOutcropChance: 0.35,
     logChance: 0.08,
     bushChance: 0.5,
@@ -203,22 +228,29 @@ export const CONFIG = {
   },
 
   scenery: {
+    // `heightOffset` is relative to the camera, so ridges keep sitting on the horizon as the run descends.
     ridgeLayers: [
-      { distance: 900, followFactor: 0.93, height: 220 },
-      { distance: 1400, followFactor: 0.88, height: 340 },
+      { distance: 900, followFactor: 0.93, height: 220, heightOffset: -30 },
+      { distance: 1400, followFactor: 0.88, height: 340, heightOffset: -10 },
     ],
     cloudCount: 4,
-    sunElevationDeg: 18,
-    sunIntensity: 3.2,
+    // The run always heads toward +z, so a sun near that heading is stared into for the whole game and
+    // blows the frame out. Keeping it high and well off-axis side-lights the terrain instead, which is
+    // what makes the rollers and moguls read at all, and still swings into frame on hard turns for rays.
+    sunElevationDeg: 35,
+    sunAzimuthDeg: 65,
+    sunIntensity: 2.5,
     shadowMapDesktop: 4096,
     shadowMapMobile: 2048,
     shadowBoxSize: 62,
   },
 
   post: {
-    bloomThreshold: 0.82,
-    bloomStrength: 0.55,
-    bloomRadius: 0.4,
+    // Sunlit snow sits just under this threshold, so bloom picks out the sun, the orbs and specular
+    // glints rather than smearing the entire slope.
+    bloomThreshold: 0.95,
+    bloomStrength: 0.42,
+    bloomRadius: 0.55,
     dofNearStart: 45,
     dofNearRange: 130,
     chromaticAberrationBase: 0.0015,

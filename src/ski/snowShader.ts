@@ -54,13 +54,19 @@ uniform float uTime;`,
   float absLat = abs(vLateralDistance);
   float pisteHalf = ${PISTE_HALF};
   float onPiste = 1.0 - smoothstep(pisteHalf - 4.0, pisteHalf, absLat);
-  float grooveFade = 1.0 - smoothstep(pisteHalf + 40.0, pisteHalf + 90.0, absLat);
-  float groove = sin(vLateralDistance * ${GROOVE_FREQ}) * 0.025 * onPiste * grooveFade;
-  float edgeBand = smoothstep(pisteHalf - 2.0, pisteHalf, absLat) * (1.0 - smoothstep(pisteHalf, pisteHalf + 2.0, absLat));
+  // Grooves fade out with distance so the high-frequency stripe pattern never aliases into moire on
+  // the far end of a chunk; they only exist inside the groomed lane in the first place.
+  float grooveFade = 1.0 - smoothstep(60.0, 150.0, length(vWorldPos - cameraPosition));
+  float groove = sin(vLateralDistance * ${GROOVE_FREQ}) * 0.05 * onPiste * grooveFade;
+
+  // A distinct darker lip either side of the groomed lane. This is the single strongest read for
+  // "you are on the piste" -- without it the corridor and the off-piste snow are the same white sheet.
+  float edgeBand = smoothstep(pisteHalf - 2.5, pisteHalf, absLat) * (1.0 - smoothstep(pisteHalf, pisteHalf + 3.0, absLat));
   float offPiste = 1.0 - onPiste;
+
   diffuseColor.rgb += groove;
-  diffuseColor.rgb -= edgeBand * 0.05;
-  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.92, 0.97, 1.08), offPiste * 0.5);
+  diffuseColor.rgb -= edgeBand * 0.12;
+  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.88, 0.94, 1.06), offPiste * 0.7);
 }`,
     )
     .replace(

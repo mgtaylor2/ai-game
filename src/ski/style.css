@@ -1,58 +1,244 @@
-:root { color-scheme: dark; font-family: -apple-system, "Segoe UI", system-ui, sans-serif; }
+:root {
+  color-scheme: dark;
+  --ink: #0e2f57;
+  --orange: #ff8a3d;
+  --sky-top: #2e6fd1;
+  --sky-bottom: #cfe2f7;
+  font-family: ui-sans-serif, -apple-system, "Segoe UI", system-ui, sans-serif;
+}
+
 html, body { margin: 0; height: 100%; overflow: hidden; background: #2e6fd1; touch-action: none; }
 #app, #ski-canvas { width: 100%; height: 100%; }
 #ski-canvas { display: block; }
 .hidden { display: none !important; }
 
 .ski-root { position: absolute; inset: 0; pointer-events: none; }
-.ski-root button { pointer-events: auto; }
+.ski-root button, .ski-root a { pointer-events: auto; }
 
-.ski-hud { position: absolute; inset: 0; color: #fff; text-shadow: 0 2px 6px rgba(20,50,90,.45); font-weight: 700; }
-.ski-hud-speed { position: absolute; top: 18px; left: 20px; display: flex; align-items: baseline; gap: 6px; }
-.ski-speed-value { font-size: 46px; font-weight: 900; line-height: 1; }
-.ski-speed-unit { font-size: 15px; opacity: .85; }
-.ski-hud-score { position: absolute; top: 18px; right: 20px; text-align: right; }
-.ski-score-value { font-size: 30px; font-weight: 900; }
-.ski-combo-value { margin-top: 4px; font-size: 17px; font-weight: 900; transition: transform .15s; }
-.ski-hud-distance { position: absolute; bottom: 20px; left: 20px; font-size: 18px; opacity: .9; }
-.ski-hud-boost { position: absolute; bottom: 14px; right: 18px; width: 60px; }
-.ski-shield-badge { text-align: center; font-size: 20px; margin-bottom: 4px; filter: drop-shadow(0 2px 4px rgba(0,0,0,.4)); }
-.ski-boost-ring { width: 60px; height: 60px; transform: rotate(-90deg); }
-.ski-boost-track { fill: none; stroke: rgba(255,255,255,.25); stroke-width: 5; }
-.ski-boost-arc { fill: none; stroke: #ffcc33; stroke-width: 5; stroke-linecap: round; transition: stroke-dashoffset .1s linear; }
+/* ---------- HUD ---------- */
 
-.ski-popups { position: absolute; left: 50%; bottom: 34%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 4px; }
-.ski-popup { color: #fff; font-size: 26px; font-weight: 900; text-shadow: 0 2px 8px rgba(0,0,0,.5); opacity: 0; transform: translateY(10px) scale(.9); transition: opacity .35s, transform .9s ease-out; white-space: nowrap; }
-.ski-popup--rise { opacity: 1; transform: translateY(-46px) scale(1); }
-.ski-popup--gate { color: #ffd23f; }
-.ski-popup--miss { color: #ff6b6b; }
-.ski-popup--shield { color: #bfe6ff; }
+.ski-hud {
+  position: absolute;
+  /* Inset with safe-area padding so nothing collides with a notch or home indicator. */
+  inset: calc(18px + env(safe-area-inset-top)) calc(22px + env(safe-area-inset-right))
+         calc(18px + env(safe-area-inset-bottom)) calc(22px + env(safe-area-inset-left));
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 2px rgba(10, 30, 60, .35), 0 4px 18px rgba(10, 30, 60, .3);
+}
+.ski-corner { position: absolute; display: flex; }
+.ski-corner--tl { top: 0; left: 0; }
+.ski-corner--tr { top: 0; right: 0; flex-direction: column; align-items: flex-end; gap: 6px; }
+.ski-corner--bl { bottom: 0; left: 0; }
+.ski-corner--br { bottom: 0; right: 0; flex-direction: column; align-items: center; gap: 10px; }
 
-.ski-fps { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); padding: 4px 10px; border-radius: 8px; color: #9be89b; background: rgba(0,0,0,.55); font: 13px ui-monospace, monospace; }
-.ski-error { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); max-width: 80vw; padding: 12px 18px; border-radius: 10px; background: rgba(140,0,0,.85); color: #fff; font: 13px ui-monospace, monospace; }
-.ski-portrait-hint { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(10,20,40,.85); color: #fff; font-size: 20px; font-weight: 700; text-align: center; padding: 0 24px; z-index: 50; pointer-events: none; }
+.ski-speed { display: flex; align-items: baseline; gap: 7px; }
+.ski-speed-value { font-size: clamp(38px, 5vw, 56px); font-weight: 800; line-height: .9; letter-spacing: -.02em; }
+.ski-speed-unit { font-size: 14px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; opacity: .8; }
 
-.ski-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: linear-gradient(180deg, #2e6fd1, #bfdbf7); pointer-events: auto; }
-.ski-overlay-panel { text-align: center; color: #0d3a6b; padding: 20px; max-width: 90vw; }
-.ski-title { font-size: clamp(48px, 10vw, 96px); font-style: italic; font-weight: 900; margin: 0; color: #fff; text-shadow: 0 6px 0 rgba(13,58,107,.3); letter-spacing: 1px; }
-.ski-title--small { font-size: clamp(36px, 8vw, 64px); }
-.ski-title-rush { color: #ff8a3d; }
-.ski-subtitle { font-size: 18px; font-weight: 700; color: #ffffffdd; margin: 14px 0 22px; }
-.ski-hints { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 26px; }
-.ski-hint-chip { padding: 8px 14px; border-radius: 999px; background: rgba(255,255,255,.22); backdrop-filter: blur(6px); border: 1px solid rgba(255,255,255,.5); color: #fff; font-size: 14px; font-weight: 700; }
-.ski-start-button { padding: 16px 42px; border: none; border-radius: 999px; font: 900 20px inherit; letter-spacing: 1px; color: #0d3a6b; background: #fff; box-shadow: 0 8px 20px rgba(0,0,0,.25); cursor: pointer; animation: ski-pulse 1.6s ease-in-out infinite; }
-.ski-end-score { color: #fff; font-size: 20px; font-weight: 800; margin: 16px 0 26px; }
-@keyframes ski-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+.ski-score-value { font-size: clamp(26px, 3.2vw, 38px); font-weight: 800; line-height: 1; letter-spacing: -.01em; }
 
-.ski-touch-ui { position: absolute; inset: 0; pointer-events: none; }
+.ski-combo {
+  --heat: 0;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: .1em;
+  /* Both the tint and the lift scale with chain heat, so a big combo visibly grows. */
+  color: rgb(255, calc(255 - var(--heat) * 150), calc(255 - var(--heat) * 240));
+  background: rgba(255, 255, 255, calc(.12 + var(--heat) * .1));
+  border: 1px solid rgba(255, 255, 255, calc(.25 + var(--heat) * .35));
+  backdrop-filter: blur(8px);
+  transform: scale(calc(1 + var(--heat) * .16));
+  transform-origin: right center;
+  transition: transform .18s ease-out, color .18s, background .18s, border-color .18s;
+}
+.ski-combo-x { font-size: 1.15em; }
+
+.ski-distance { font-size: 17px; font-weight: 700; letter-spacing: .04em; opacity: .92; }
+
+.ski-shield { width: 26px; height: 26px; color: #cfeaff; filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .35)); }
+.ski-shield svg { width: 100%; height: 100%; fill: currentColor; }
+
+.ski-boost { width: 58px; height: 58px; transform: rotate(-90deg); filter: drop-shadow(0 2px 8px rgba(0, 0, 0, .3)); }
+.ski-boost-track { fill: none; stroke: rgba(255, 255, 255, .22); stroke-width: 5; }
+.ski-boost-arc { fill: none; stroke: #ffc93d; stroke-width: 5; stroke-linecap: round; transition: stroke-dashoffset .08s linear; }
+
+/* ---------- Popups ---------- */
+
+.ski-popups {
+  position: absolute; left: 50%; bottom: 32%;
+  transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+}
+.ski-popup {
+  font-size: clamp(20px, 2.6vw, 30px);
+  font-weight: 800;
+  letter-spacing: .04em;
+  color: #fff;
+  text-shadow: 0 2px 10px rgba(8, 26, 52, .6);
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(14px) scale(.88);
+  transition: opacity .3s ease-out, transform 1s cubic-bezier(.16, .8, .3, 1);
+}
+.ski-popup--rise { opacity: 1; transform: translateY(-52px) scale(1); }
+.ski-popup--gate { color: #ffd75e; }
+.ski-popup--boost { color: #ffc93d; }
+.ski-popup--miss { color: #ff7b6b; }
+.ski-popup--shield { color: #b9e4ff; }
+
+/* ---------- Debug / errors ---------- */
+
+.ski-fps {
+  position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+  padding: 4px 10px; border-radius: 8px;
+  color: #9be89b; background: rgba(0, 0, 0, .55);
+  font: 13px ui-monospace, monospace;
+}
+.ski-error {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  max-width: 80vw; padding: 14px 18px; border-radius: 12px;
+  background: rgba(150, 20, 20, .92); color: #fff;
+  font: 13px/1.5 ui-monospace, monospace;
+}
+.ski-portrait {
+  position: absolute; inset: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(10, 26, 52, .9); backdrop-filter: blur(6px);
+}
+.ski-portrait-inner { display: grid; gap: 12px; justify-items: center; color: #fff; font-size: 19px; font-weight: 700; text-align: center; padding: 0 28px; }
+.ski-portrait-icon { font-size: 42px; }
+
+/* ---------- Overlays ---------- */
+
+.ski-overlay {
+  position: absolute; inset: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  /* Translucent rather than opaque: the menu camera slowly orbits the rider on the real mountain
+     behind this, and hiding that entirely would waste the nicest shot in the game. */
+  background:
+    radial-gradient(120% 90% at 50% 42%, rgba(10, 34, 68, 0) 0%, rgba(10, 34, 68, .35) 60%, rgba(8, 28, 58, .72) 100%),
+    linear-gradient(180deg, rgba(46, 111, 209, .62) 0%, rgba(140, 186, 235, .38) 45%, rgba(207, 226, 247, .5) 100%);
+  animation: ski-fade-in .45s ease-out;
+}
+@keyframes ski-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+.ski-panel { display: grid; justify-items: center; gap: 0; text-align: center; max-width: min(720px, 92vw); }
+
+.ski-title {
+  margin: 0;
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 0 .28em;
+  font-size: clamp(52px, 11vw, 116px);
+  font-weight: 900; font-style: italic;
+  letter-spacing: -.02em; line-height: .92;
+  text-transform: uppercase;
+}
+.ski-title-a { color: #fff; text-shadow: 0 4px 0 rgba(14, 47, 87, .28), 0 18px 40px rgba(8, 28, 58, .45); }
+.ski-title-b { color: var(--orange); text-shadow: 0 4px 0 rgba(120, 48, 8, .32), 0 18px 40px rgba(8, 28, 58, .45); }
+
+.ski-tagline {
+  margin: 18px 0 0;
+  max-width: 30em;
+  font-size: clamp(14px, 1.7vw, 18px); font-weight: 600; line-height: 1.5;
+  color: rgba(255, 255, 255, .92);
+  text-shadow: 0 2px 10px rgba(8, 28, 58, .5);
+}
+
+.ski-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 24px; }
+.ski-chip {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 8px 14px; border-radius: 999px;
+  background: rgba(255, 255, 255, .16);
+  border: 1px solid rgba(255, 255, 255, .38);
+  backdrop-filter: blur(10px);
+  color: rgba(255, 255, 255, .9);
+  font-size: 13px; font-weight: 600; letter-spacing: .01em;
+}
+.ski-chip b {
+  font-size: 11px; font-weight: 800; letter-spacing: .1em;
+  padding: 3px 7px; border-radius: 6px;
+  background: rgba(255, 255, 255, .92); color: var(--ink);
+}
+
+.ski-cta {
+  margin-top: 30px;
+  padding: 17px 46px;
+  border: none; border-radius: 999px;
+  font: 800 19px/1 inherit; letter-spacing: .1em;
+  color: var(--ink); background: #fff;
+  box-shadow: 0 10px 30px rgba(6, 24, 50, .35), 0 2px 0 rgba(255, 255, 255, .6) inset;
+  cursor: pointer;
+  animation: ski-pulse 2s ease-in-out infinite;
+  transition: transform .16s ease-out, box-shadow .16s ease-out;
+}
+.ski-cta:hover { transform: translateY(-2px); box-shadow: 0 16px 38px rgba(6, 24, 50, .4); }
+.ski-cta:active { transform: translateY(1px); }
+.ski-cta:focus-visible { outline: 3px solid var(--orange); outline-offset: 3px; }
+@keyframes ski-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.045); } }
+
+.ski-menu-best, .ski-back {
+  margin-top: 18px;
+  font-size: 13px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  color: rgba(255, 255, 255, .75);
+  text-shadow: 0 2px 8px rgba(8, 28, 58, .5);
+}
+.ski-menu-best strong { color: #fff; font-size: 1.25em; }
+.ski-back { text-decoration: none; opacity: .7; transition: opacity .15s; }
+.ski-back:hover { opacity: 1; text-decoration: underline; }
+
+/* ---------- End screen ---------- */
+
+.ski-badge-newbest {
+  padding: 6px 16px; border-radius: 999px; margin-bottom: 16px;
+  background: var(--orange); color: #fff;
+  font-size: 12px; font-weight: 900; letter-spacing: .18em;
+  box-shadow: 0 6px 20px rgba(255, 138, 61, .5);
+  animation: ski-pop .5s cubic-bezier(.2, 1.4, .4, 1);
+}
+@keyframes ski-pop { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+.ski-end-title {
+  margin: 0;
+  font-size: clamp(40px, 8vw, 76px); font-weight: 900; font-style: italic;
+  letter-spacing: -.01em; color: #fff;
+  text-shadow: 0 4px 0 rgba(14, 47, 87, .28), 0 16px 36px rgba(8, 28, 58, .45);
+}
+
+.ski-stats { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 26px; }
+.ski-stat {
+  display: grid; gap: 4px; min-width: 116px;
+  padding: 14px 20px; border-radius: 16px;
+  background: rgba(255, 255, 255, .15);
+  border: 1px solid rgba(255, 255, 255, .3);
+  backdrop-filter: blur(10px);
+}
+.ski-stat-label { font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: rgba(255, 255, 255, .75); }
+.ski-stat-value { font-size: 26px; font-weight: 800; color: #fff; font-variant-numeric: tabular-nums; }
+
+/* ---------- Touch controls ---------- */
+
+.ski-touch-ui { position: absolute; inset: 0; z-index: 10; pointer-events: none; }
 .ski-touch-zone { position: absolute; top: 0; bottom: 0; width: 40%; pointer-events: auto; }
 .ski-touch-zone--left { left: 0; }
 .ski-touch-zone--right { right: 0; }
-.ski-touch-button { position: absolute; bottom: 26px; width: 74px; height: 74px; border-radius: 999px; border: 1px solid rgba(255,255,255,.6); background: rgba(255,255,255,.22); backdrop-filter: blur(6px); color: #fff; font: 900 14px inherit; pointer-events: auto; }
-.ski-touch-button--jump { left: 26px; }
-.ski-touch-button--spin { right: 26px; }
+.ski-touch-button {
+  position: absolute; bottom: calc(28px + env(safe-area-inset-bottom));
+  width: 78px; height: 78px; border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, .55);
+  background: rgba(255, 255, 255, .2);
+  backdrop-filter: blur(8px);
+  color: #fff; font: 800 13px/1 inherit; letter-spacing: .1em;
+  pointer-events: auto;
+}
+.ski-touch-button:active { background: rgba(255, 255, 255, .34); }
+.ski-touch-button--jump { left: calc(26px + env(safe-area-inset-left)); }
+.ski-touch-button--spin { right: calc(26px + env(safe-area-inset-right)); }
 
-@media (max-width: 600px) {
-  .ski-speed-value { font-size: 34px; }
-  .ski-score-value { font-size: 22px; }
+@media (prefers-reduced-motion: reduce) {
+  .ski-cta { animation: none; }
+  .ski-overlay { animation: none; }
+  .ski-popup { transition-duration: .2s; }
 }

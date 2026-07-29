@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import { CONFIG } from './config';
 
 const UP = new THREE.Vector3(0, 1, 0);
+// Reused every frame -- the render loop must not allocate.
+const YAW_QUAT = new THREE.Quaternion();
+const TILT_QUAT = new THREE.Quaternion();
 
 /** Nested-group rig: root (surface tilt + travel yaw) -> board-tilt group (edge roll) -> character group (crouch/counter-rotate/flail/tuck). */
 export class Rider {
@@ -100,9 +103,9 @@ export class Rider {
     dt: number,
   ): void {
     this.root.position.copy(position);
-    const yawQuat = new THREE.Quaternion().setFromAxisAngle(UP, yaw);
-    const tiltQuat = new THREE.Quaternion().setFromUnitVectors(UP, normal);
-    this.root.quaternion.copy(tiltQuat).multiply(yawQuat);
+    YAW_QUAT.setFromAxisAngle(UP, yaw);
+    TILT_QUAT.setFromUnitVectors(UP, normal);
+    this.root.quaternion.copy(TILT_QUAT).multiply(YAW_QUAT);
 
     this.boardTilt.rotation.z = edgeAngle;
 

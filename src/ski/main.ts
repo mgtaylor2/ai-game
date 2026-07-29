@@ -19,6 +19,20 @@ import { updateSnowShaderUniforms } from './snowShader';
 
 type GameState = 'menu' | 'playing' | 'ended';
 
+/** Half-width of the rider's collision footprint, added to each obstacle's radius. */
+const RIDER_COLLISION_RADIUS = 0.55;
+/** How far along the sun direction the sun billboard sits; only its screen projection matters. */
+const SUN_DISTANCE = 1900;
+
+// Scratch objects reused every frame. Nothing in the render loop may allocate.
+const scratchRiderPos = new THREE.Vector3();
+const scratchNormal = new THREE.Vector3();
+const scratchForward = new THREE.Vector3();
+const scratchLateral = new THREE.Vector3();
+const scratchSunWorld = new THREE.Vector3();
+const scratchPreviewPos = new THREE.Vector3();
+const WORLD_UP = new THREE.Vector3(0, 1, 0);
+
 function trickLabel(spinDeg: number, direction: 'FS' | 'BS', grabbed: boolean, bigAir: boolean, switchLanding: boolean): string | null {
   const parts: string[] = [];
   if (spinDeg >= 45) parts.push(`${Math.round(spinDeg / 45) * 45}° ${direction}`);
@@ -78,18 +92,25 @@ function bootstrap(): void {
   let fpsAccumulatorFrames = 0;
   let currentFps = 60;
 
+  /** Current rider position in a shared scratch vector -- valid until the next call. */
   function riderVector(): THREE.Vector3 {
-    return new THREE.Vector3(physics.x, physics.y, physics.z);
+    return scratchRiderPos.set(physics.x, physics.y, physics.z);
   }
 
   function startRun(): void {
     physics = new SkiPhysics(mountain, 0);
     scoring.reset();
+    // Chunks 0..8 are already streamed in and never get unloaded/rebuilt when the rider warps back to
+    // z=0, so pickups and gates must be told to respawn explicitly -- otherwise a replay runs the first
+    // 800 m with every orb already collected and every gate already marked passed.
+    pickupManager.reset();
     gateManager.reset(mountain.centerXAt(0), 0);
-    const startPos = riderVector();
-    chaseCam.snapTo({ position: startPos, z: 0, yaw: physics.yaw, edgeAngle: 0, speed01: 0, boosting: false });
+    chaseCam.snapTo({ position: riderVector(), z: 0, yaw: physics.yaw, edgeAngle: 0, speed01: 0, boosting: false });
+    effects.reset();
     gameState = 'playing';
     hud.hideOverlays();
+    // Space is also the jump key; leaving the start button focused makes the first jump re-press it.
+    (document.activeElement as HTMLElement | null)?.blur();
   }
 
   hud.onStart(startRun);
@@ -98,7 +119,7 @@ function bootstrap(): void {
   if (new URLSearchParams(window.location.search).has('autostart')) {
     startRun();
   } else {
-    hud.showStartOverlay();
+    hud.showStartOverlay(scoring.best);
   }
 
   function handleTrick(spinDeg: number, direction: 'FS' | 'BS', grabbed: boolean, bigAir: boolean, switchLanding: boolean): void {
@@ -130,6 +151,9 @@ function bootstrap(): void {
       lastDowngradeAt = elapsed;
       if (qualityStage === 0) {
         renderer.setPixelRatio(CONFIG.adaptive.pixelRatioStep1);
+        // The composer sizes its targets from the renderer's pixel ratio, so it has to be told too --
+        // otherwise the passes keep rendering at the old resolution and the step-down saves nothing.
+        postFx.setSize(window.innerWidth, window.innerHeight);
         qualityStage = 1;
       } else if (qualityStage === 1) {
         postFx.setDofEnabled(false);
@@ -142,16 +166,17 @@ function bootstrap(): void {
 
     if (gameState === 'menu') {
       const previewZ = 8;
-      const previewPos = new THREE.Vector3(mountain.centerXAt(previewZ), mountain.heightAt(mountain.centerXAt(previewZ), previewZ), previewZ);
+      const previewCenterX = mountain.centerXAt(previewZ);
+      const previewPos = scratchPreviewPos.set(previewCenterX, mountain.heightAt(previewCenterX, previewZ), previewZ);
       const dir = mountain.dirAt(previewZ);
-      rider.update(previewPos, new THREE.Vector3(0, 1, 0), Math.atan2(dir.x, dir.z), 0, 0, false, 0, dt);
+      rider.update(previewPos, WORLD_UP, Math.atan2(dir.x, dir.z), 0, 0, false, 0, dt);
       chaseCam.updateMenuOrbit(dt, previewPos);
       chunkManager.update(previewZ, chaseCam.camera.position);
       scenery.update(dt, chaseCam.camera.position, previewPos);
       effects.snowfall.update(dt, chaseCam.camera.position);
       updateSnowShaderUniforms(scenery.sunDirection, elapsed);
-      const sunWorldPosition = chaseCam.camera.position.clone().addScaledVector(scenery.sunDirection, 1900);
-      postFx.render({ sunWorldPosition, sunHalo: scenery.sunHalo, speed01: 0, boosting: false, boundaryWarning: 0, impactPulse: 0, elapsed });
+      const sunWorldPosition = scratchSunWorld.copy(chaseCam.camera.position).addScaledVector(scenery.sunDirection, SUN_DISTANCE);
+      postFx.render({ sunWorldPosition, sunHalo: scenery.sunHalo, speed01: 0, boosting: false, boundaryWarning: 0, elapsed });
       requestAnimationFrame(tick);
       return;
     }
@@ -196,7 +221,7 @@ function bootstrap(): void {
         } else if (event.kind === 'boost') {
           physics.activateBoost();
           audio.playBoostSweep();
-          hud.showPopup('BOOST!', 'trick');
+          hud.showPopup('BOOST!', 'boost');
           effects.triggerShockwave(event.position, 0xffcc33, 0.9);
         } else if (event.kind === 'shield') {
           physics.grantShield();
@@ -218,20 +243,17 @@ function bootstrap(): void {
         }
       }
 
-      if (physics.grounded && !physics.invulnerable) {
-        for (const obstacle of chunkManager.getObstaclesNear()) {
-          const dist = Math.hypot(physics.x - obstacle.x, physics.z - obstacle.z);
-          if (dist < obstacle.radius + 0.55) {
-            physics.crash();
-            break;
-          }
-        }
+      // Always test while grounded and let `crash()` decide the outcome -- gating on any
+      // invulnerability here would mean a shielded hit never registers, so the shield is never spent.
+      if (physics.grounded && !physics.inCollisionGrace && chunkManager.hitsObstacle(physics.x, physics.z, RIDER_COLLISION_RADIUS)) {
+        physics.crash();
       }
 
       chunkManager.update(physics.z, chaseCam.camera.position);
 
       const airEase = Math.min(1, physics.airTime * 3);
-      const displayNormal = physics.grounded ? physics.surfaceNormal : physics.surfaceNormal.clone().lerp(new THREE.Vector3(0, 1, 0), airEase);
+      const displayNormal = scratchNormal.copy(physics.surfaceNormal);
+      if (!physics.grounded) displayNormal.lerp(WORLD_UP, airEase);
       const edgeFactor = Math.abs(physics.edgeAngle) / CONFIG.physics.maxEdgeAngle;
       const crouch = (physics.tucking ? 1 : 0) * 0.6 + edgeFactor * 0.4;
       rider.update(riderPos, displayNormal, physics.yaw, physics.grounded ? physics.edgeAngle : physics.edgeAngle * 0.3, Math.min(1, crouch), physics.airborne, physics.grabAmount, dt);
@@ -245,8 +267,8 @@ function bootstrap(): void {
         mountain,
       );
 
-      const boardForward = new THREE.Vector3(Math.sin(physics.yaw), 0, Math.cos(physics.yaw));
-      const boardLateral = new THREE.Vector3(boardForward.z, 0, -boardForward.x);
+      const boardForward = scratchForward.set(Math.sin(physics.yaw), 0, Math.cos(physics.yaw));
+      const boardLateral = scratchLateral.set(boardForward.z, 0, -boardForward.x);
       effects.update(dt, riderPos, boardLateral, boardForward, physics.edgeAngle, Math.min(1, physics.lateralSlipSpeed / 3), physics.speed, physics.grounded, chaseCam.camera.position);
 
       scenery.update(dt, chaseCam.camera.position, riderPos);
@@ -266,20 +288,27 @@ function bootstrap(): void {
         fps: currentFps,
       });
 
-      const sunWorldPosition = chaseCam.camera.position.clone().addScaledVector(scenery.sunDirection, 1900);
+      const sunWorldPosition = scratchSunWorld.copy(chaseCam.camera.position).addScaledVector(scenery.sunDirection, SUN_DISTANCE);
       postFx.render({
         sunWorldPosition,
         sunHalo: scenery.sunHalo,
         speed01: Math.min(1, physics.speed / CONFIG.physics.maxSpeed),
         boosting: physics.boostTimer > 0,
         boundaryWarning: physics.boundaryWarning,
-        impactPulse: 0,
         elapsed,
       });
 
       if (physics.runEnded) {
+        // Capture the old best before finalizing, so the end screen can call out a new record.
+        const previousBest = scoring.best;
         scoring.finalizeBest();
-        hud.showEndOverlay(scoring.score, scoring.best, physics.z);
+        hud.showEndOverlay({
+          score: scoring.score,
+          best: scoring.best,
+          distanceM: physics.z,
+          isNewBest: scoring.score > previousBest && scoring.score > 0,
+          cause: 'wipeout',
+        });
         gameState = 'ended';
       }
     } else {
@@ -294,8 +323,8 @@ function bootstrap(): void {
         shielded: false,
         fps: currentFps,
       });
-      const sunWorldPosition = chaseCam.camera.position.clone().addScaledVector(scenery.sunDirection, 1900);
-      postFx.render({ sunWorldPosition, sunHalo: scenery.sunHalo, speed01: 0, boosting: false, boundaryWarning: 0, impactPulse: 0, elapsed });
+      const sunWorldPosition = scratchSunWorld.copy(chaseCam.camera.position).addScaledVector(scenery.sunDirection, SUN_DISTANCE);
+      postFx.render({ sunWorldPosition, sunHalo: scenery.sunHalo, speed01: 0, boosting: false, boundaryWarning: 0, elapsed });
     }
 
     requestAnimationFrame(tick);

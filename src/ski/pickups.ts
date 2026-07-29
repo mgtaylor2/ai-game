@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { CONFIG } from './config';
 import { Mountain } from './terrain';
-import { subRng } from './rng';
+import { subRng, hash2i } from './rng';
 import { InstancedPool } from './decor';
 
 type PickupKind = 'orb' | 'boost' | 'shield';
@@ -23,6 +23,15 @@ export interface PickupEvent {
 }
 
 const CHUNK_LENGTH = CONFIG.chunk.length;
+
+const UP = new THREE.Vector3(0, 1, 0);
+const UNIT_SCALE = new THREE.Vector3(1, 1, 1);
+const SCRATCH_WORLD = new THREE.Vector3();
+const SCRATCH_PULL = new THREE.Vector3();
+const SCRATCH_POS = new THREE.Vector3();
+const SCRATCH_QUAT = new THREE.Quaternion();
+const SCRATCH_MATRIX = new THREE.Matrix4();
+
 const orbGeometry = new THREE.IcosahedronGeometry(0.45, 0);
 const orbMaterial = new THREE.MeshStandardMaterial({
   color: CONFIG.pickups.orbColor,
@@ -65,34 +74,33 @@ export class PickupManager {
       if (!this.active.has(i)) this.build(i);
     }
 
+    // Collect events are rare, so the array is only built when something is actually picked up.
+    // The per-pickup transform work below reuses scratch objects: with a few hundred orbs streamed in,
+    // composing a fresh Matrix4/Quaternion/Vector3 per pickup per frame was the loop's biggest allocator.
     const events: PickupEvent[] = [];
     const p = CONFIG.pickups;
     for (const list of this.active.values()) {
       for (const pickup of list) {
         if (pickup.collected) continue;
-        const world = pickup.base.clone().add(pickup.offset);
+        const world = SCRATCH_WORLD.copy(pickup.base).add(pickup.offset);
         const dist = world.distanceTo(riderPosition);
 
         if (dist < p.collectRadius) {
           pickup.collected = true;
           pickup.pool.free(pickup.index);
-          events.push({ type: 'collect', kind: pickup.kind, position: world });
+          events.push({ type: 'collect', kind: pickup.kind, position: world.clone() });
           continue;
         }
         if (dist < p.magnetRadius) {
-          const pull = riderPosition.clone().sub(world).multiplyScalar(Math.min(1, dt * 8));
-          pickup.offset.add(pull);
+          pickup.offset.add(SCRATCH_PULL.copy(riderPosition).sub(world).multiplyScalar(Math.min(1, dt * 8)));
         }
 
         pickup.bobPhase += dt * 3;
         const bobY = Math.sin(pickup.bobPhase) * 0.18;
         const spin = this.time * 1.6 + pickup.bobPhase;
-        const matrix = new THREE.Matrix4().compose(
-          new THREE.Vector3(world.x, world.y + bobY, world.z),
-          new THREE.Quaternion().setFromEuler(new THREE.Euler(0, spin, 0)),
-          new THREE.Vector3(1, 1, 1),
-        );
-        pickup.pool.set(pickup.index, matrix);
+        SCRATCH_POS.set(world.x, world.y + bobY, world.z);
+        SCRATCH_QUAT.setFromAxisAngle(UP, spin);
+        pickup.pool.set(pickup.index, SCRATCH_MATRIX.compose(SCRATCH_POS, SCRATCH_QUAT, UNIT_SCALE));
       }
     }
     this.orbPool.flush();
@@ -108,11 +116,25 @@ export class PickupManager {
     this.active.delete(index);
   }
 
+  /**
+   * Drops every streamed chunk so the next `update` rebuilds them from their seeds. Needed on restart:
+   * the chunks around z=0 stay resident across a run, so without this a replay finds them already collected.
+   */
+  reset(): void {
+    for (const index of Array.from(this.active.keys())) this.unload(index);
+    this.orbPool.flush();
+    this.boostPool.flush();
+    this.shieldPool.flush();
+  }
+
   private spawn(kind: PickupKind, position: THREE.Vector3, list: ActivePickup[]): void {
     const pool = kind === 'orb' ? this.orbPool : kind === 'boost' ? this.boostPool : this.shieldPool;
     const index = pool.alloc();
     if (index === null) return;
-    list.push({ kind, pool, index, base: position.clone(), offset: new THREE.Vector3(), bobPhase: Math.random() * Math.PI * 2, collected: false });
+    // Bob phase is derived from world position rather than Math.random so a chunk that streams out and
+    // back in comes back looking identical, per the "identical every run" rule.
+    const bobPhase = (hash2i(Math.round(position.x * 16), Math.round(position.z * 16)) / 4294967296) * Math.PI * 2;
+    list.push({ kind, pool, index, base: position.clone(), offset: new THREE.Vector3(), bobPhase, collected: false });
   }
 
   private build(chunkIndex: number): void {

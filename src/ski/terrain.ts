@@ -14,9 +14,6 @@ export interface Kicker {
 
 const KICKER_LATERAL_SIGMA = 4.5;
 const KICKER_CURVATURE_SKIP = 0.012;
-const VALLEY_WALL_GAIN = 0.14;
-const VALLEY_WALL_CAP_EXCESS = 70;
-const BANK_GAIN = 8;
 
 /**
  * The whole mountain as one analytic height field, `heightAt(x, z)`. No physics engine, no raycasts:
@@ -75,23 +72,15 @@ export class Mountain {
   }
 
   /** Returns every kicker near the given z (current chunk plus neighbours, since a ramp's gaussian tail can cross a chunk boundary). */
-  kickersNear(z: number): Kicker[] {
-    const chunkIndex = Math.floor(z / CONFIG.chunk.length);
-    return [
-      ...this.kickersForChunk(chunkIndex - 1),
-      ...this.kickersForChunk(chunkIndex),
-      ...this.kickersForChunk(chunkIndex + 1),
-    ];
-  }
-
   /** Kickers belonging to exactly one chunk (no neighbour bleed) — used by pickups.ts to trace a flight path over them. */
   getChunkKickers(chunkIndex: number): Kicker[] {
     return this.kickersForChunk(chunkIndex);
   }
 
-  private kickerHeightAt(x: number, z: number): number {
+  private sumKickerList(list: Kicker[], x: number, z: number): number {
     let sum = 0;
-    for (const k of this.kickersNear(z)) {
+    for (let i = 0; i < list.length; i++) {
+      const k = list[i];
       const dz = z - k.z;
       const sigmaZ = dz < 0 ? k.upSigma : k.downSigma;
       const dx = x - k.x;
@@ -101,6 +90,20 @@ export class Mountain {
         Math.exp(-(dx * dx) / (2 * k.lateralSigma * k.lateralSigma));
     }
     return sum;
+  }
+
+  /**
+   * Sums the current chunk plus both neighbours (a ramp's gaussian tail can cross a chunk boundary).
+   * Walks the three lists directly instead of concatenating them: `heightAt` is called ~16k times per
+   * chunk build and 5x per rider/camera sample, so building a temporary array here dominated GC.
+   */
+  private kickerHeightAt(x: number, z: number): number {
+    const chunkIndex = Math.floor(z / CONFIG.chunk.length);
+    return (
+      this.sumKickerList(this.kickersForChunk(chunkIndex - 1), x, z) +
+      this.sumKickerList(this.kickersForChunk(chunkIndex), x, z) +
+      this.sumKickerList(this.kickersForChunk(chunkIndex + 1), x, z)
+    );
   }
 
   /** Signed lateral distance from the groomed centerline. Positive = rider's right (+x side). */
@@ -115,11 +118,11 @@ export class Mountain {
     const lateral = x - this.centerXAt(zc);
     const absLateral = Math.abs(lateral);
 
-    const excess = Math.min(Math.max(0, absLateral - CONFIG.terrain.corridorHalfWidth), VALLEY_WALL_CAP_EXCESS);
-    const valleyWall = excess * excess * VALLEY_WALL_GAIN;
+    const excess = Math.min(Math.max(0, absLateral - CONFIG.terrain.corridorHalfWidth), CONFIG.terrain.valleyWallCapExcess);
+    const valleyWall = excess * excess * CONFIG.terrain.valleyWallGain;
 
     const curvature = this.curvatureAt(zc);
-    const bank = curvature * lateral * BANK_GAIN;
+    const bank = curvature * lateral * CONFIG.terrain.bankGain;
 
     const t = CONFIG.terrain;
     const rollerNoiseMod = 0.5 + 0.5 * noise3Octave(x * 0.05, zc * 0.05);
@@ -134,8 +137,12 @@ export class Mountain {
     return base + valleyWall + bank + rollerShort + rollerLong + mogul + kicker;
   }
 
-  /** Height plus a finite-difference surface normal, used by the rider, camera, and decor placement. */
-  getHeightAndNormal(x: number, z: number): { height: number; normal: THREE.Vector3 } {
+  /**
+   * Height plus a finite-difference surface normal, used by the rider, camera, and decor placement.
+   * Writes the normal into `outNormal` and returns the height rather than allocating a result object:
+   * this is called per terrain vertex during a chunk build and several times per frame by the rider.
+   */
+  heightAndNormalInto(x: number, z: number, outNormal: THREE.Vector3): number {
     const eps = 0.35;
     const height = this.heightAt(x, z);
     const hx1 = this.heightAt(x + eps, z);
@@ -144,8 +151,8 @@ export class Mountain {
     const hz0 = this.heightAt(x, z - eps);
     const dHdx = (hx1 - hx0) / (2 * eps);
     const dHdz = (hz1 - hz0) / (2 * eps);
-    const normal = new THREE.Vector3(-dHdx, 1, -dHdz).normalize();
-    return { height, normal };
+    outNormal.set(-dHdx, 1, -dHdz).normalize();
+    return height;
   }
 }
 

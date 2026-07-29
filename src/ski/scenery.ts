@@ -1,6 +1,11 @@
 import * as THREE from 'three';
 import { CONFIG } from './config';
 import { noise3Octave } from './rng';
+import { SUN_LAYER } from './postprocessing';
+
+/** Matches `SUN_DISTANCE` in main.ts: the sun billboard sits this far along the sun direction. */
+const SUN_DISTANCE = 1900;
+const SCRATCH_SUN = new THREE.Vector3();
 
 function buildSky(): THREE.Mesh {
   const geometry = new THREE.SphereGeometry(2200, 24, 16);
@@ -25,11 +30,14 @@ function buildSky(): THREE.Mesh {
       uniform vec3 uSunDirection;
       varying vec3 vDir;
       void main() {
-        float t = clamp(vDir.y * 0.6 + 0.15, 0.0, 1.0);
+        // Gamma-shaped so blue arrives well before the zenith. A near-linear ramp leaves the whole
+        // upper half of a downhill-facing view sitting on the pale horizon colour, which reads as
+        // overcast rather than bluebird.
+        float t = pow(clamp(vDir.y * 1.15 + 0.06, 0.0, 1.0), 0.6);
         vec3 color = mix(uHorizon, uTop, t);
         float sunDot = max(dot(normalize(vDir), normalize(uSunDirection)), 0.0);
-        color += uHalo * pow(sunDot, 12.0) * 0.8;
-        color += uHalo * pow(sunDot, 3.0) * 0.15;
+        color += uHalo * pow(sunDot, 26.0) * 0.55;
+        color += uHalo * pow(sunDot, 5.0) * 0.08;
         gl_FragColor = vec4(color, 1.0);
       }
     `,
@@ -55,8 +63,10 @@ function buildRidge(distance: number, height: number, color: THREE.Color, snowCo
     const n = noise3Octave(i * 0.35 + seedOffset, seedOffset * 3.1);
     const peakHeight = baseY + height * (0.45 + 0.55 * (0.5 + 0.5 * n));
 
-    positions.push(x, baseY, -distance);
-    positions.push(x, peakHeight, -distance);
+    // +distance, not -distance: the run always heads toward +z and the camera looks that way, so a
+    // ridge at -distance sits permanently behind the player and is never seen.
+    positions.push(x, baseY, distance);
+    positions.push(x, peakHeight, distance);
 
     const snowLine = baseY + height * 0.62;
     const brightnessJitter = 0.85 + 0.3 * noise3Octave(i * 1.7 + seedOffset, seedOffset);
@@ -121,8 +131,8 @@ export class Scenery {
 
   private readonly sky: THREE.Mesh;
   private readonly skyMaterial: THREE.ShaderMaterial;
-  private readonly ridgeLayers: Array<{ mesh: THREE.Mesh; followFactor: number }> = [];
-  private readonly clouds: Array<{ mesh: THREE.Mesh; drift: number }> = [];
+  private readonly ridgeLayers: Array<{ mesh: THREE.Mesh; followFactor: number; heightOffset: number }> = [];
+  private readonly clouds: Array<{ mesh: THREE.Mesh; drift: number; offsetX: number; height: number; depth: number; driftX: number }> = [];
   private readonly sunDisc: THREE.Sprite;
   readonly sunHalo: THREE.Sprite;
 
@@ -139,15 +149,21 @@ export class Scenery {
     CONFIG.scenery.ridgeLayers.forEach((layer, i) => {
       const mesh = buildRidge(layer.distance, layer.height, rockColor, snowColor, haze, i * 17.3 + 1);
       this.group.add(mesh);
-      this.ridgeLayers.push({ mesh, followFactor: layer.followFactor });
+      this.ridgeLayers.push({ mesh, followFactor: layer.followFactor, heightOffset: layer.heightOffset });
     });
 
     const forestMesh = buildRidge(650, 70, forestColor, forestColor, haze, 99);
     this.group.add(forestMesh);
-    this.ridgeLayers.push({ mesh: forestMesh, followFactor: 0.97 });
+    this.ridgeLayers.push({ mesh: forestMesh, followFactor: 0.97, heightOffset: -40 });
 
     const elevationRad = THREE.MathUtils.degToRad(CONFIG.scenery.sunElevationDeg);
-    this.sunDirection = new THREE.Vector3(Math.cos(elevationRad) * 0.5, Math.sin(elevationRad), Math.cos(elevationRad) * 0.85).normalize();
+    const azimuthRad = THREE.MathUtils.degToRad(CONFIG.scenery.sunAzimuthDeg);
+    const horizontal = Math.cos(elevationRad);
+    this.sunDirection = new THREE.Vector3(
+      horizontal * Math.sin(azimuthRad),
+      Math.sin(elevationRad),
+      horizontal * Math.cos(azimuthRad),
+    ).normalize();
 
     this.sunLight = new THREE.DirectionalLight(0xfff2d6, CONFIG.scenery.sunIntensity);
     this.sunLight.castShadow = true;
@@ -171,17 +187,20 @@ export class Scenery {
 
     const discMaterial = new THREE.SpriteMaterial({ map: SOFT_DOT, color: 0xfff6d8, transparent: true, depthWrite: false, fog: false });
     this.sunDisc = new THREE.Sprite(discMaterial);
-    this.sunDisc.scale.set(60, 60, 1);
+    this.sunDisc.scale.set(70, 70, 1);
+    // Own layer so the god-ray occlusion pass can draw the disc separately from the black-override world.
+    this.sunDisc.layers.set(SUN_LAYER);
     const haloMaterial = new THREE.SpriteMaterial({
       map: SOFT_DOT,
       color: CONFIG.visual.sunHalo,
       transparent: true,
+      opacity: 0.32,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
       fog: false,
     });
     this.sunHalo = new THREE.Sprite(haloMaterial);
-    this.sunHalo.scale.set(220, 220, 1);
+    this.sunHalo.scale.set(300, 300, 1);
     this.group.add(this.sunHalo, this.sunDisc);
 
     for (let i = 0; i < CONFIG.scenery.cloudCount; i++) {
@@ -189,14 +208,15 @@ export class Scenery {
       const material = new THREE.MeshBasicMaterial({
         map: createCloudTexture(i * 3.7),
         transparent: true,
+        opacity: 0.85,
         depthWrite: false,
         fog: false,
       });
       const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.set((i - 1.5) * 400, 260 + i * 40, -1600 - i * 220);
       mesh.rotation.x = -0.05;
       this.group.add(mesh);
-      this.clouds.push({ mesh, drift: 1.5 + i * 0.4 });
+      // Positive depth for the same reason as the ridges: everything scenic has to be down-slope.
+      this.clouds.push({ mesh, drift: 1.5 + i * 0.4, offsetX: (i - 1.5) * 400, height: 240 + i * 55, depth: 1500 + i * 220, driftX: 0 });
     }
   }
 
@@ -204,21 +224,34 @@ export class Scenery {
     this.sky.position.copy(cameraPosition);
 
     for (const layer of this.ridgeLayers) {
-      layer.mesh.position.set(cameraPosition.x * layer.followFactor, 0, cameraPosition.z * layer.followFactor);
-    }
-    for (const cloud of this.clouds) {
-      cloud.mesh.position.x += dt * cloud.drift;
-      cloud.mesh.position.set(cameraPosition.x * 0.96 + Math.sin(cloud.mesh.position.x * 0.0002) * 100, cloud.mesh.position.y, cameraPosition.z * 0.96 - 1500);
+      // Follow the camera in Y as well as X/Z. The run descends hundreds of metres, so ridges pinned to
+      // world y=0 would climb out of frame and eventually sit overhead instead of on the horizon.
+      layer.mesh.position.set(
+        cameraPosition.x * layer.followFactor,
+        cameraPosition.y + layer.heightOffset,
+        cameraPosition.z * layer.followFactor,
+      );
     }
 
-    const sunDistance = 1900;
-    const sunPos = cameraPosition.clone().addScaledVector(this.sunDirection, sunDistance);
+    for (const cloud of this.clouds) {
+      // Drift is accumulated separately: writing it into position.x and then overwriting position.x from
+      // the camera (as an earlier version did) silently threw the drift away every frame.
+      cloud.driftX += dt * cloud.drift;
+      cloud.mesh.position.set(
+        cameraPosition.x * 0.96 + cloud.offsetX + Math.sin(cloud.driftX * 0.02) * 160,
+        cameraPosition.y + cloud.height,
+        cameraPosition.z * 0.96 + cloud.depth,
+      );
+    }
+
+    const sunPos = SCRATCH_SUN.copy(cameraPosition).addScaledVector(this.sunDirection, SUN_DISTANCE);
     this.sunDisc.position.copy(sunPos);
     this.sunHalo.position.copy(sunPos);
     this.skyMaterial.uniforms.uSunDirection.value.copy(this.sunDirection);
 
     this.sunLight.position.copy(riderPosition).addScaledVector(this.sunDirection, 120);
     this.sunLight.target.position.copy(riderPosition);
+    this.sunLight.target.updateMatrixWorld();
   }
 }
 

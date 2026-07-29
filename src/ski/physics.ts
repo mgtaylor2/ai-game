@@ -3,8 +3,11 @@ import { CONFIG } from './config';
 import { Mountain } from './terrain';
 import type { SkiInputState } from './input';
 import { checkTakeoff, classifyLanding, autoTrackTarget, easeAngleTowards } from './air';
+import { seededRandomFor, hash2i } from './rng';
 
 const RAD2DEG = 180 / Math.PI;
+/** Reused by `getTumbleRotation`, which is called every frame during a wipeout. */
+const TUMBLE_QUAT = new THREE.Quaternion();
 
 export type SkiEvent =
   | { type: 'takeoff' }
@@ -63,8 +66,13 @@ export class SkiPhysics {
     return !this.grounded;
   }
 
-  get invulnerable(): boolean {
-    return this.collisionGraceTimer > 0 || this.shielded;
+  /**
+   * True only during the brief post-respawn/post-shield window where contacts are ignored outright.
+   * Deliberately does NOT include `shielded`: a shield must still *register* the hit so `crash()` can
+   * consume it, so callers should always call `crash()` and let it decide rather than gating on this.
+   */
+  get inCollisionGrace(): boolean {
+    return this.collisionGraceTimer > 0;
   }
 
   get tucking(): boolean {
@@ -114,16 +122,21 @@ export class SkiPhysics {
 
   /** Called externally on obstacle contact. Shielded hits are absorbed; otherwise the run ends after a tumble. */
   crash(): void {
-    if (this.wipedOut || this.invulnerable) return;
+    if (this.wipedOut || this.inCollisionGrace) return;
     if (this.shielded) {
       this.shielded = false;
+      // Same grace as a respawn, so the obstacle that just consumed the shield can't immediately re-hit
+      // on the next frame while the rider is still inside its radius.
+      this.collisionGraceTimer = CONFIG.physics.respawnCollisionGrace;
       this.events.push({ type: 'shieldSaved' });
       return;
     }
     this.wipedOut = true;
     this.grounded = true;
     this.tumbleTimer = CONFIG.air.wipeoutTumbleTime;
-    this.tumbleAxis.set(Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1).normalize();
+    // Seeded off the crash location so the same wipeout replays identically.
+    const rand = seededRandomFor(CONFIG.seed, hash2i(Math.round(this.x * 32), Math.round(this.z * 32)));
+    this.tumbleAxis.set(rand() * 2 - 1, rand() * 2 - 1, rand() * 2 - 1).normalize();
     this.vx *= CONFIG.air.wipeoutSpinFactor;
     this.vz *= CONFIG.air.wipeoutSpinFactor;
     this.events.push({ type: 'wipeout' });
@@ -132,7 +145,7 @@ export class SkiPhysics {
   getTumbleRotation(): THREE.Quaternion | null {
     if (!this.wipedOut) return null;
     const elapsed = CONFIG.air.wipeoutTumbleTime - this.tumbleTimer;
-    return new THREE.Quaternion().setFromAxisAngle(this.tumbleAxis, elapsed * 6);
+    return TUMBLE_QUAT.setFromAxisAngle(this.tumbleAxis, elapsed * 6);
   }
 
   update(dt: number, input: SkiInputState, mountain: Mountain): void {
@@ -157,8 +170,8 @@ export class SkiPhysics {
     const target = input.steer * p.maxEdgeAngle;
     this.edgeAngle += (target - this.edgeAngle) * Math.min(1, dt * p.edgeEase);
 
-    const { normal } = mountain.getHeightAndNormal(this.x, this.z);
-    this.surfaceNormal.copy(normal);
+    mountain.heightAndNormalInto(this.x, this.z, this.surfaceNormal);
+    const normal = this.surfaceNormal;
 
     // normal = normalize(-dH/dx, 1, -dH/dz), so dH/dx = -normal.x/normal.y (and likewise for z).
     // Gravity accelerates *downhill*, i.e. opposite the height gradient: accel = -g * grad(H).
@@ -295,8 +308,7 @@ export class SkiPhysics {
   private land(ground: number, mountain: Mountain): void {
     this.y = ground;
     this.grounded = true;
-    const { normal } = mountain.getHeightAndNormal(this.x, this.z);
-    this.surfaceNormal.copy(normal);
+    mountain.heightAndNormalInto(this.x, this.z, this.surfaceNormal);
 
     const travelHeading = Math.atan2(this.vx, this.vz);
     const { clean, switchLanding } = classifyLanding(this.yaw, travelHeading);

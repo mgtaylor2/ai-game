@@ -36,9 +36,14 @@ export class GateManager {
     this.group.add(this.redPool.mesh, this.bluePool.mesh);
   }
 
+  /**
+   * Rewinds crossing detection to the given start point and drops every streamed chunk so gates rebuild
+   * un-passed. Without the rebuild, a replay's first few hundred metres of gates stay flagged `passed`.
+   */
   reset(x: number, z: number): void {
     this.prevX = x;
     this.prevZ = z;
+    for (const index of Array.from(this.active.keys())) this.unload(index);
   }
 
   update(riderX: number, riderZ: number): GateEvent[] {

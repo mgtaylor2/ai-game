@@ -32,7 +32,7 @@ class ParticlePool {
   private readonly maxLife: Float32Array;
   private cursor = 0;
 
-  constructor(capacity: number, baseSize: number, color: THREE.ColorRepresentation, blending: THREE.Blending) {
+  constructor(capacity: number, color: THREE.ColorRepresentation, blending: THREE.Blending) {
     this.positions = new Float32Array(capacity * 3);
     this.sizes = new Float32Array(capacity);
     this.alphas = new Float32Array(capacity);
@@ -46,7 +46,7 @@ class ParticlePool {
     this.geometry.setAttribute('alpha', new THREE.BufferAttribute(this.alphas, 1));
 
     const material = new THREE.ShaderMaterial({
-      uniforms: { uTexture: { value: SOFT_DISC }, uColor: { value: new THREE.Color(color) }, uBaseSize: { value: baseSize } },
+      uniforms: { uTexture: { value: SOFT_DISC }, uColor: { value: new THREE.Color(color) } },
       vertexShader: `
         attribute float size;
         attribute float alpha;
@@ -109,6 +109,8 @@ class ParticlePool {
 }
 
 const RAND = () => Math.random() * 2 - 1;
+/** Lifts the carve ribbon just clear of the snow so it doesn't z-fight with the terrain. */
+const TRAIL_GROUND_OFFSET = 0.05;
 
 /** 10 pooled expanding-ring shockwave meshes, reused for landings and pickups alike. */
 class ShockwavePool {
@@ -200,7 +202,9 @@ class CarveTrail {
         void main() {
           float alpha = clamp(1.0 - vAge / uLifetime, 0.0, 1.0);
           if (alpha <= 0.001) discard;
-          gl_FragColor = vec4(0.96, 0.98, 1.0, alpha * 0.5);
+          // A carve is a cut into the snow, so the ribbon is a cool shadow tone. Painting it near-white
+          // makes it brighter than the slope it sits on and it reads as a stripe stuck to the board.
+          gl_FragColor = vec4(0.62, 0.70, 0.84, alpha * 0.3);
         }
       `,
       transparent: true,
@@ -215,18 +219,51 @@ class CarveTrail {
   write(center: THREE.Vector3, lateralDir: THREE.Vector3, width: number, time: number): void {
     const i = this.writeHead;
     this.writeHead = (this.writeHead + 1) % this.segments;
-    const left = center.clone().addScaledVector(lateralDir, -width / 2);
-    const right = center.clone().addScaledVector(lateralDir, width / 2);
-    this.positions.set([left.x, left.y + 0.03, left.z], i * 6);
-    this.positions.set([right.x, right.y + 0.03, right.z], i * 6 + 3);
+
+    const half = width / 2;
+    const lx = center.x - lateralDir.x * half;
+    const lz = center.z - lateralDir.z * half;
+    const rx = center.x + lateralDir.x * half;
+    const rz = center.z + lateralDir.z * half;
+    const y = center.y + TRAIL_GROUND_OFFSET;
+
+    const base = i * 6;
+    this.positions[base] = lx;
+    this.positions[base + 1] = y;
+    this.positions[base + 2] = lz;
+    this.positions[base + 3] = rx;
+    this.positions[base + 4] = y;
+    this.positions[base + 5] = rz;
     this.birthTimes[i * 2] = time;
     this.birthTimes[i * 2 + 1] = time;
+
+    // Collapse the seam quad. The strip joins consecutive indices, so the pair just ahead of the write
+    // head still holds the *oldest* sample -- hundreds of metres away -- and the quad bridging them
+    // renders as a long bright streak pinned to the rider. Copying this frame's sample into it makes
+    // that quad zero-area until the head advances and overwrites it with real data.
+    const next = this.writeHead;
+    const nextBase = next * 6;
+    this.positions[nextBase] = lx;
+    this.positions[nextBase + 1] = y;
+    this.positions[nextBase + 2] = lz;
+    this.positions[nextBase + 3] = rx;
+    this.positions[nextBase + 4] = y;
+    this.positions[nextBase + 5] = rz;
+    this.birthTimes[next * 2] = time;
+    this.birthTimes[next * 2 + 1] = time;
+
     (this.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
     (this.geometry.attributes.birthTime as THREE.BufferAttribute).needsUpdate = true;
   }
 
   setTime(time: number): void {
     (this.mesh.material as THREE.ShaderMaterial).uniforms.uTime.value = time;
+  }
+
+  /** Ages every segment out instantly, so a restart doesn't leave a ribbon stretched across the mountain. */
+  clear(): void {
+    this.birthTimes.fill(-1000);
+    (this.geometry.attributes.birthTime as THREE.BufferAttribute).needsUpdate = true;
   }
 }
 
@@ -238,9 +275,9 @@ class Snowfall {
   constructor() {
     const box = new THREE.Vector3(CONFIG.effects.snowBoxSize.x, CONFIG.effects.snowBoxSize.y, CONFIG.effects.snowBoxSize.z);
     const layerDefs = [
-      { count: 900, speed: 2.2, size: 2.5, opacity: 0.4 },
-      { count: 700, speed: 3.6, size: 3.5, opacity: 0.5 },
-      { count: 400, speed: 5.2, size: 5, opacity: 0.6 },
+      { count: 900, speed: 2.2, size: 2.0, opacity: 0.35 },
+      { count: 700, speed: 3.6, size: 2.8, opacity: 0.45 },
+      { count: 400, speed: 5.2, size: 3.8, opacity: 0.55 },
     ];
     for (const def of layerDefs) {
       const positions = new Float32Array(def.count * 3);
@@ -260,8 +297,10 @@ class Snowfall {
           void main() {
             vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
             float dist = length(mvPosition.xyz);
-            vFade = smoothstep(2.5, 7.0, dist) * (1.0 - smoothstep(uBox.z * 0.42, uBox.z * 0.5, dist));
-            gl_PointSize = clamp(uSize * (280.0 / max(1.0, -mvPosition.z)), 0.0, 80.0);
+            // Fade out flakes very close to the lens as well as at the box edge -- a flake a metre away
+            // otherwise covers a huge screen area and reads as a smeared blob rather than snowfall.
+            vFade = smoothstep(3.0, 11.0, dist) * (1.0 - smoothstep(uBox.z * 0.42, uBox.z * 0.5, dist));
+            gl_PointSize = clamp(uSize * (110.0 / max(2.0, -mvPosition.z)), 0.0, 14.0);
             gl_Position = projectionMatrix * mvPosition;
           }
         `,
@@ -286,16 +325,24 @@ class Snowfall {
   }
 
   update(dt: number, cameraPosition: THREE.Vector3): void {
+    // The whole snow volume is parented to the camera, so flakes always surround the rider and never
+    // need spawning or despawning -- they just wrap around inside the box as they fall.
+    this.group.position.copy(cameraPosition);
+
     for (const layer of this.layers) {
-      this.group.position.copy(cameraPosition);
-      const half = layer.box.clone().multiplyScalar(0.5);
-      for (let i = 0; i < layer.positions.length / 3; i++) {
-        layer.positions[i * 3 + 1] -= layer.speed * dt;
-        for (const axis of [0, 1, 2] as const) {
-          const size = axis === 0 ? layer.box.x : axis === 1 ? layer.box.y : layer.box.z;
-          if (layer.positions[i * 3 + axis] < -half.getComponent(axis)) layer.positions[i * 3 + axis] += size;
-          if (layer.positions[i * 3 + axis] > half.getComponent(axis)) layer.positions[i * 3 + axis] -= size;
-        }
+      const halfX = layer.box.x * 0.5;
+      const halfY = layer.box.y * 0.5;
+      const halfZ = layer.box.z * 0.5;
+      const positions = layer.positions;
+      const fall = layer.speed * dt;
+      for (let i = 0; i < positions.length; i += 3) {
+        positions[i + 1] -= fall;
+        if (positions[i] < -halfX) positions[i] += layer.box.x;
+        else if (positions[i] > halfX) positions[i] -= layer.box.x;
+        if (positions[i + 1] < -halfY) positions[i + 1] += layer.box.y;
+        else if (positions[i + 1] > halfY) positions[i + 1] -= layer.box.y;
+        if (positions[i + 2] < -halfZ) positions[i + 2] += layer.box.z;
+        else if (positions[i + 2] > halfZ) positions[i + 2] -= layer.box.z;
       }
       (layer.points.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
     }
@@ -306,8 +353,8 @@ class Snowfall {
 export class SkiEffects {
   readonly group = new THREE.Group();
   readonly trail = new CarveTrail();
-  private readonly spray = new ParticlePool(CONFIG.effects.sprayPoolSize, 0.6, 0xffffff, THREE.AdditiveBlending);
-  private readonly powder = new ParticlePool(CONFIG.effects.powderPoolSize, 1.4, 0xf4f8ff, THREE.NormalBlending);
+  private readonly spray = new ParticlePool(CONFIG.effects.sprayPoolSize, 0xffffff, THREE.AdditiveBlending);
+  private readonly powder = new ParticlePool(CONFIG.effects.powderPoolSize, 0xf4f8ff, THREE.NormalBlending);
   readonly shockwaves = new ShockwavePool(CONFIG.effects.shockwavePoolSize);
   readonly snowfall = new Snowfall();
   private time = 0;
@@ -333,7 +380,7 @@ export class SkiEffects {
     this.trail.setTime(this.time);
 
     if (grounded && speed > CONFIG.effects.trailMinSpeed) {
-      const width = 0.15 + (Math.abs(edgeAngle) / CONFIG.physics.maxEdgeAngle) * 0.5;
+      const width = 0.35 + (Math.abs(edgeAngle) / CONFIG.physics.maxEdgeAngle) * 0.95;
       this.trail.write(riderPosition, boardLateral, width, this.time);
 
       const edgeSign = Math.sign(edgeAngle) || 1;
@@ -367,6 +414,11 @@ export class SkiEffects {
     this.powder.update(dt, 1.5);
     this.shockwaves.update(dt);
     this.snowfall.update(dt, cameraPosition);
+  }
+
+  /** Clears carried-over state between runs (currently just the carve ribbon; particles age out on their own). */
+  reset(): void {
+    this.trail.clear();
   }
 
   burst(position: THREE.Vector3, count: number, heavy: boolean): void {

@@ -100,8 +100,10 @@ const UBER_B_FRAGMENT = `
   varying vec2 vUv;
 
   vec3 grade(vec3 color) {
-    vec3 shadows = vec3(0.0, 0.02, 0.05);
-    vec3 highlights = vec3(0.06, 0.03, -0.02);
+    // Cool lift in shadows, a restrained warm gain in highlights. Pushing the warm gain harder tints
+    // sunlit snow visibly beige, since snow occupies almost the entire highlight range here.
+    vec3 shadows = vec3(0.0, 0.015, 0.05);
+    vec3 highlights = vec3(0.035, 0.022, 0.0);
     float luma = dot(color, vec3(0.299, 0.587, 0.114));
     color += shadows * (1.0 - smoothstep(0.0, 0.5, luma));
     color += highlights * smoothstep(0.4, 1.0, luma);
@@ -144,6 +146,12 @@ const UBER_B_FRAGMENT = `
 const OCCLUDER_MATERIAL = new THREE.MeshBasicMaterial({ color: 0x000000 });
 const DEPTH_MATERIAL = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
 
+/**
+ * Layer the sun disc lives on so the god-ray occlusion pass can draw the world and the sun separately.
+ * `scenery.ts` puts the disc here; the main camera has all layers enabled, so normal rendering is unaffected.
+ */
+export const SUN_LAYER = 1;
+
 const GODRAY_FRAGMENT = `
   uniform sampler2D tDiffuse;
   uniform vec2 uSunScreen;
@@ -169,7 +177,6 @@ export interface PostProcessingFrame {
   speed01: number;
   boosting: boolean;
   boundaryWarning: number;
-  impactPulse: number;
   elapsed: number;
 }
 
@@ -192,11 +199,16 @@ export class PostProcessing {
   private dofEnabled = true;
   private godraysEnabled = true;
   private impactAberration = 0;
+  private readonly scratchSun = new THREE.Vector3();
+  private readonly scratchSunScreen = new THREE.Vector2();
 
   constructor(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, width: number, height: number) {
     this.renderer = renderer;
     this.scene = scene;
     this.camera = camera;
+    // The god-ray pass narrows the camera to a single layer and restores with enableAll(), so every
+    // layer the game uses must be on by default here.
+    camera.layers.enableAll();
 
     const renderTarget = new THREE.WebGLRenderTarget(width, height, { type: THREE.HalfFloatType });
     this.composer = new EffectComposer(renderer, renderTarget);
@@ -309,15 +321,37 @@ export class PostProcessing {
     this.scene.overrideMaterial = null;
   }
 
+  /**
+   * Builds the occlusion buffer the radial blur smears into god rays: black everywhere the world blocks
+   * the sky, bright only on the visible part of the sun disc.
+   *
+   * This has to be two passes. A single pass with a blanket black `overrideMaterial` also blacks out the
+   * sun itself, leaving an all-black buffer and therefore no rays at all. So: draw the world first as
+   * black occluders (writing depth), then draw only the sun's layer on top with depth testing still on,
+   * so terrain and trees in front of the sun correctly punch it out.
+   */
   private renderGodRays(sunHalo: THREE.Object3D, sunScreen: THREE.Vector2): void {
-    const wasVisible = sunHalo.visible;
+    const haloWasVisible = sunHalo.visible;
+    // The halo is a big additive sprite; under the opaque black override it would stamp a black disc
+    // right over the sun, so it sits this pass out entirely.
     sunHalo.visible = false;
-    this.scene.overrideMaterial = OCCLUDER_MATERIAL;
+
+    const previousAutoClear = this.renderer.autoClear;
     this.renderer.setRenderTarget(this.occlusionTarget);
-    this.renderer.clear();
+
+    this.camera.layers.disable(SUN_LAYER);
+    this.scene.overrideMaterial = OCCLUDER_MATERIAL;
+    this.renderer.autoClear = true;
     this.renderer.render(this.scene, this.camera);
     this.scene.overrideMaterial = null;
-    sunHalo.visible = wasVisible;
+
+    this.camera.layers.set(SUN_LAYER);
+    this.renderer.autoClear = false;
+    this.renderer.render(this.scene, this.camera);
+
+    this.camera.layers.enableAll();
+    this.renderer.autoClear = previousAutoClear;
+    sunHalo.visible = haloWasVisible;
 
     this.godrayMaterial.uniforms.uSunScreen.value.copy(sunScreen);
     this.renderer.setRenderTarget(this.godrayTarget);
@@ -327,8 +361,8 @@ export class PostProcessing {
   render(frame: PostProcessingFrame): void {
     if (this.dofEnabled) this.renderDepthPrepass();
 
-    const projected = frame.sunWorldPosition.clone().project(this.camera);
-    const sunScreen = new THREE.Vector2((projected.x + 1) / 2, (projected.y + 1) / 2);
+    const projected = this.scratchSun.copy(frame.sunWorldPosition).project(this.camera);
+    const sunScreen = this.scratchSunScreen.set((projected.x + 1) / 2, (projected.y + 1) / 2);
     const sunInFrontOfCamera = projected.z < 1;
     const sunVisible = sunInFrontOfCamera ? 1 : 0;
 
